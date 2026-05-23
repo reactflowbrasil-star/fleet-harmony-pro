@@ -1,5 +1,5 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, redirect, useNavigate, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Truck, Loader2 } from "lucide-react";
+import { Truck, Loader2, Building2, UserRound, ArrowRight, ShieldCheck, Smartphone } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+type AccountKind = "company" | "driver";
+const ROLE_KEY = "frotap-auth-kind";
 
 export const Route = createFileRoute("/auth")({
   beforeLoad: async () => {
@@ -29,9 +33,40 @@ const loginSchema = z.object({
   password: z.string().min(1, "Senha obrigatória"),
 });
 
+/** After login, route to /driver if the user only has the driver role; otherwise /dashboard. */
+async function routeAfterLogin(userId: string, chosenKind: AccountKind, navigate: ReturnType<typeof useNavigate>) {
+  // Honor explicit choice first when it matches the user's capabilities.
+  const { data: rolesData } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId);
+  const roles = (rolesData ?? []).map((r: any) => r.role as string);
+  const isAdminish = roles.includes("admin") || roles.includes("fleet_manager");
+  const isDriver = roles.includes("driver") || !isAdminish;
+
+  if (chosenKind === "driver" && isDriver) {
+    navigate({ to: "/driver" });
+    return;
+  }
+  if (chosenKind === "company" && isAdminish) {
+    navigate({ to: "/dashboard" });
+    return;
+  }
+  // Mismatch: fall back to whatever the user actually has access to.
+  navigate({ to: isAdminish ? "/dashboard" : "/driver" });
+}
+
 function AuthPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [kind, setKind] = useState<AccountKind>(() => {
+    if (typeof window === "undefined") return "company";
+    return (localStorage.getItem(ROLE_KEY) as AccountKind) || "company";
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") localStorage.setItem(ROLE_KEY, kind);
+  }, [kind]);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -39,11 +74,12 @@ function AuthPage() {
     const parsed = loginSchema.safeParse({ email: fd.get("email"), password: fd.get("password") });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
+    const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
     setLoading(false);
     if (error) return toast.error(error.message);
+    if (!data.user) return toast.error("Falha no login");
     toast.success("Bem-vindo de volta!");
-    navigate({ to: "/dashboard" });
+    await routeAfterLogin(data.user.id, kind, navigate);
   }
 
   async function handleSignup(e: React.FormEvent<HTMLFormElement>) {
@@ -70,87 +106,214 @@ function AuthPage() {
     toast.success("Conta criada! Verifique seu e-mail para confirmar.");
   }
 
+  const isCompany = kind === "company";
+
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="hidden flex-col justify-between p-12 lg:flex" style={{ background: "var(--gradient-emerald)" }}>
-        <div className="flex items-center gap-2 text-primary-foreground">
+      {/* Side panel */}
+      <aside
+        className="hidden flex-col justify-between p-12 lg:flex"
+        style={{ background: isCompany ? "var(--gradient-emerald)" : "linear-gradient(135deg,#1a3d2e,#0f1a14)" }}
+      >
+        <Link to="/" className="flex items-center gap-2 text-primary-foreground">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold text-gold-foreground">
             <Truck className="h-5 w-5" />
           </div>
-          <span className="font-display text-2xl">FleetGuard</span>
-        </div>
-        <div className="text-primary-foreground">
-          <h2 className="font-display text-5xl italic">"Controle total da operação."</h2>
-          <p className="mt-4 max-w-md text-primary-foreground/80">
-            Gestão completa de frotas com rastreio GPS, app para motoristas e isolamento de dados por empresa.
-          </p>
-        </div>
-        <div className="text-xs text-primary-foreground/70">© FleetGuard · Multi-empresa · LGPD</div>
-      </div>
+          <span className="font-display text-2xl">Frotap</span>
+        </Link>
 
-      <div className="flex items-center justify-center bg-background p-6">
+        <div className="text-primary-foreground">
+          {isCompany ? (
+            <>
+              <h2 className="font-display text-5xl italic leading-[1.05]">"Controle total<br />da operação."</h2>
+              <p className="mt-5 max-w-md text-primary-foreground/85">
+                Painel completo com rastreio GPS em tempo real, dashboards executivos, geofencing,
+                gestão de motoristas, abastecimentos, multas e manutenções.
+              </p>
+              <ul className="mt-6 space-y-2 text-sm text-primary-foreground/80">
+                <li className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-gold" /> Multi-empresa com isolamento por LGPD</li>
+                <li className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-gold" /> Realtime + alertas + geocercas</li>
+                <li className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-gold" /> Suporte 24/7 no plano Pro</li>
+              </ul>
+            </>
+          ) : (
+            <>
+              <h2 className="font-display text-5xl italic leading-[1.05]">"Do volante<br />à gestão."</h2>
+              <p className="mt-5 max-w-md text-primary-foreground/85">
+                Toques grandes, fluxo curto, funciona offline. Inicie a viagem, registre abastecimento
+                e ocorrências — a gestão recebe tudo em tempo real.
+              </p>
+              <ul className="mt-6 space-y-2 text-sm text-primary-foreground/80">
+                <li className="flex items-center gap-2"><Smartphone className="h-4 w-4 text-gold" /> Funciona em qualquer celular</li>
+                <li className="flex items-center gap-2"><Smartphone className="h-4 w-4 text-gold" /> GPS ativo só durante a viagem</li>
+                <li className="flex items-center gap-2"><Smartphone className="h-4 w-4 text-gold" /> Sincroniza quando volta o sinal</li>
+              </ul>
+            </>
+          )}
+        </div>
+
+        <div className="text-xs text-primary-foreground/70">© Frotap · Multi-empresa · LGPD-ready</div>
+      </aside>
+
+      {/* Form column */}
+      <main className="flex items-center justify-center bg-background p-6">
         <div className="w-full max-w-md">
-          <div className="mb-8 lg:hidden">
-            <div className="flex items-center gap-2">
+          {/* mobile brand */}
+          <div className="mb-6 lg:hidden">
+            <Link to="/" className="inline-flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Truck className="h-5 w-5" />
               </div>
-              <span className="font-display text-2xl">FleetGuard</span>
+              <span className="font-display text-2xl">Frotap</span>
+            </Link>
+          </div>
+
+          {/* Role chooser */}
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Quem está acessando?
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2.5">
+              <RoleChoice
+                active={isCompany}
+                onClick={() => setKind("company")}
+                icon={Building2}
+                title="Empresa"
+                subtitle="Painel administrativo"
+              />
+              <RoleChoice
+                active={!isCompany}
+                onClick={() => setKind("driver")}
+                icon={UserRound}
+                title="Motorista"
+                subtitle="App de viagens"
+              />
             </div>
           </div>
 
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Entrar</TabsTrigger>
-              <TabsTrigger value="signup">Criar conta</TabsTrigger>
-            </TabsList>
+          {/* Forms */}
+          <div className="mt-7">
+            {isCompany ? (
+              <Tabs defaultValue="login" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="login">Entrar</TabsTrigger>
+                  <TabsTrigger value="signup">Criar conta</TabsTrigger>
+                </TabsList>
 
-            <TabsContent value="login" className="mt-6">
-              <h1 className="font-display text-3xl">Acesse sua conta</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Use seu e-mail e senha.</p>
-              <form onSubmit={handleLogin} className="mt-6 space-y-4">
-                <div>
-                  <Label htmlFor="login-email">E-mail</Label>
-                  <Input id="login-email" name="email" type="email" required autoComplete="email" />
-                </div>
-                <div>
-                  <Label htmlFor="login-password">Senha</Label>
-                  <Input id="login-password" name="password" type="password" required autoComplete="current-password" />
-                </div>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Entrar"}
-                </Button>
-              </form>
-            </TabsContent>
+                <TabsContent value="login" className="mt-6">
+                  <h1 className="font-display text-3xl">Painel administrativo</h1>
+                  <p className="mt-1 text-sm text-muted-foreground">Acesse o painel da sua empresa.</p>
+                  <LoginForm loading={loading} onSubmit={handleLogin} ctaLabel="Entrar no painel" />
+                </TabsContent>
 
-            <TabsContent value="signup" className="mt-6">
-              <h1 className="font-display text-3xl">Crie sua empresa</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Você será o administrador da conta.</p>
-              <form onSubmit={handleSignup} className="mt-6 space-y-4">
-                <div>
-                  <Label htmlFor="signup-name">Seu nome</Label>
-                  <Input id="signup-name" name="full_name" required maxLength={100} />
+                <TabsContent value="signup" className="mt-6">
+                  <h1 className="font-display text-3xl">Crie sua empresa</h1>
+                  <p className="mt-1 text-sm text-muted-foreground">Você será o administrador da conta.</p>
+                  <form onSubmit={handleSignup} className="mt-6 space-y-4">
+                    <div>
+                      <Label htmlFor="signup-name">Seu nome</Label>
+                      <Input id="signup-name" name="full_name" required maxLength={100} className="h-11" />
+                    </div>
+                    <div>
+                      <Label htmlFor="signup-company">Nome da empresa</Label>
+                      <Input id="signup-company" name="company_name" required maxLength={100} className="h-11" />
+                    </div>
+                    <div>
+                      <Label htmlFor="signup-email">E-mail</Label>
+                      <Input id="signup-email" name="email" type="email" required autoComplete="email" className="h-11" />
+                    </div>
+                    <div>
+                      <Label htmlFor="signup-password">Senha</Label>
+                      <Input id="signup-password" name="password" type="password" required minLength={6} autoComplete="new-password" className="h-11" />
+                    </div>
+                    <Button type="submit" className="h-11 w-full" disabled={loading}>
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Criar conta <ArrowRight className="ml-2 h-4 w-4" /></>}
+                    </Button>
+                  </form>
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <div>
+                <h1 className="font-display text-3xl">Portal do motorista</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Use o e-mail cadastrado pelo gestor da sua empresa.
+                </p>
+                <LoginForm loading={loading} onSubmit={handleLogin} ctaLabel="Entrar no app" />
+                <div className="surface mt-5 border-primary/30 bg-primary/5 p-4 text-xs text-muted-foreground">
+                  Ainda não tem acesso? Solicite ao administrador da sua empresa para cadastrar você como motorista
+                  e vincular ao seu veículo.
                 </div>
-                <div>
-                  <Label htmlFor="signup-company">Nome da empresa</Label>
-                  <Input id="signup-company" name="company_name" required maxLength={100} />
-                </div>
-                <div>
-                  <Label htmlFor="signup-email">E-mail</Label>
-                  <Input id="signup-email" name="email" type="email" required autoComplete="email" />
-                </div>
-                <div>
-                  <Label htmlFor="signup-password">Senha</Label>
-                  <Input id="signup-password" name="password" type="password" required minLength={6} autoComplete="new-password" />
-                </div>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar conta"}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+              </div>
+            )}
+          </div>
+
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            Ao continuar você concorda com os termos de uso e política de privacidade (LGPD).
+          </p>
         </div>
-      </div>
+      </main>
     </div>
+  );
+}
+
+function RoleChoice({
+  active, onClick, icon: Icon, title, subtitle,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: any;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "group relative flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all",
+        active
+          ? "border-primary bg-primary/[0.06] shadow-[var(--shadow-card)]"
+          : "border-border bg-card hover:border-primary/30 hover:bg-accent",
+      )}
+    >
+      <div className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
+        active ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary",
+      )}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold leading-tight">{title}</p>
+        <p className="text-[11px] text-muted-foreground">{subtitle}</p>
+      </div>
+      {active && (
+        <span className="absolute right-3 top-3 h-2 w-2 rounded-full bg-primary" aria-hidden />
+      )}
+    </button>
+  );
+}
+
+function LoginForm({
+  loading, onSubmit, ctaLabel,
+}: {
+  loading: boolean;
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+  ctaLabel: string;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="mt-6 space-y-4">
+      <div>
+        <Label htmlFor="login-email">E-mail</Label>
+        <Input id="login-email" name="email" type="email" required autoComplete="email" className="h-11" />
+      </div>
+      <div>
+        <Label htmlFor="login-password">Senha</Label>
+        <Input id="login-password" name="password" type="password" required autoComplete="current-password" className="h-11" />
+      </div>
+      <Button type="submit" className="h-11 w-full" disabled={loading}>
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <>{ctaLabel} <ArrowRight className="ml-2 h-4 w-4" /></>}
+      </Button>
+    </form>
   );
 }
