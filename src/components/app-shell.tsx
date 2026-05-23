@@ -16,6 +16,8 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
 import { CommandMenu } from "@/components/command-menu";
+import { NewTripAlert } from "@/components/new-trip-alert";
+import { useDriverNotifications } from "@/hooks/use-driver-notifications";
 
 type NavItem = { to: string; label: string; icon: any; badge?: number };
 type NavSection = { title: string; items: NavItem[] };
@@ -236,12 +238,12 @@ function ThemeToggle() {
 function TopBar({ onMenu }: { onMenu: () => void }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { data: badges } = useBadges();
+  const { notifications, unreadCount, markRead } = useDriverNotifications();
   const navigate = useNavigate();
   const pageTitle = useMemo(() => {
     const match = Object.entries(titleMap).find(([k]) => path === k || path.startsWith(k + "/"));
     return match?.[1] ?? "FleetGuard";
   }, [path]);
-  const notifTotal = (badges?.tickets ?? 0) + (badges?.fuel ?? 0) + (badges?.maintenance ?? 0);
 
   return (
     <header className="glass-bar sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border px-3 md:h-16 md:px-6">
@@ -279,39 +281,67 @@ function TopBar({ onMenu }: { onMenu: () => void }) {
               aria-label="Notificações"
             >
               <Bell className="h-4 w-4" />
-              {notifTotal > 0 && (
+              {unreadCount > 0 && (
                 <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-                  {notifTotal > 99 ? "99+" : notifTotal}
+                  {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
               )}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-72">
-            <DropdownMenuLabel>Notificações</DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="w-80">
+            <div className="flex items-center justify-between px-2 py-1.5">
+              <span className="text-sm font-semibold">Notificações</span>
+              <button onClick={() => navigate({ to: "/notifications" })} className="text-xs text-primary hover:underline">
+                Ver todas
+              </button>
+            </div>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => navigate({ to: "/tickets" })}>
-                <AlertTriangle className="mr-2 h-4 w-4 text-warning" />
-                <div className="flex-1">
-                  <div className="text-sm">{badges?.tickets ?? 0} multas pendentes</div>
-                  <div className="text-xs text-muted-foreground">Aguardando pagamento</div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate({ to: "/fuel" })}>
-                <Fuel className="mr-2 h-4 w-4 text-primary" />
-                <div className="flex-1">
-                  <div className="text-sm">{badges?.fuel ?? 0} abastecimentos pendentes</div>
-                  <div className="text-xs text-muted-foreground">Aguardando aprovação</div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate({ to: "/maintenance" })}>
-                <Wrench className="mr-2 h-4 w-4 text-destructive" />
-                <div className="flex-1">
-                  <div className="text-sm">{badges?.maintenance ?? 0} manutenções atrasadas</div>
-                  <div className="text-xs text-muted-foreground">Datas vencidas</div>
-                </div>
-              </DropdownMenuItem>
+              {notifications.length === 0 ? (
+                <div className="px-3 py-6 text-center text-sm text-muted-foreground">Nenhuma notificação ainda.</div>
+              ) : (
+                notifications.slice(0, 5).map((n) => (
+                  <DropdownMenuItem
+                    key={n.id}
+                    onClick={() => { void markRead(n.id); navigate({ to: "/notifications" }); }}
+                    className={!n.read_at ? "bg-primary/[0.04]" : ""}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">{n.title}</span>
+                        {!n.read_at && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
+                      </div>
+                      {n.message && <div className="truncate text-xs text-muted-foreground">{n.message}</div>}
+                      <div className="text-[10px] text-muted-foreground">{new Date(n.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</div>
+                    </div>
+                  </DropdownMenuItem>
+                ))
+              )}
             </DropdownMenuGroup>
+            {((badges?.tickets ?? 0) + (badges?.fuel ?? 0) + (badges?.maintenance ?? 0)) > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground">Pendências da operação</DropdownMenuLabel>
+                {(badges?.tickets ?? 0) > 0 && (
+                  <DropdownMenuItem onClick={() => navigate({ to: "/tickets" })}>
+                    <AlertTriangle className="mr-2 h-4 w-4 text-warning" />
+                    <span className="flex-1 text-sm">{badges?.tickets} multas pendentes</span>
+                  </DropdownMenuItem>
+                )}
+                {(badges?.fuel ?? 0) > 0 && (
+                  <DropdownMenuItem onClick={() => navigate({ to: "/fuel" })}>
+                    <Fuel className="mr-2 h-4 w-4 text-primary" />
+                    <span className="flex-1 text-sm">{badges?.fuel} abastecimentos para aprovar</span>
+                  </DropdownMenuItem>
+                )}
+                {(badges?.maintenance ?? 0) > 0 && (
+                  <DropdownMenuItem onClick={() => navigate({ to: "/maintenance" })}>
+                    <Wrench className="mr-2 h-4 w-4 text-destructive" />
+                    <span className="flex-1 text-sm">{badges?.maintenance} manutenções atrasadas</span>
+                  </DropdownMenuItem>
+                )}
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -327,6 +357,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
       <CommandMenu />
+      <NewTripAlert />
 
       <aside className="hidden w-64 shrink-0 border-r border-sidebar-border md:flex">
         <NavContent />

@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { useServiceWorker } from "@/hooks/use-pwa";
+import { DriverNotificationsProvider } from "@/hooks/use-driver-notifications";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -127,9 +128,11 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <AuthListener />
-          <Outlet />
-          <Toaster />
+          <DriverNotificationsProvider>
+            <AuthListener />
+            <Outlet />
+            <Toaster />
+          </DriverNotificationsProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

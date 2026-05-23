@@ -300,7 +300,7 @@ function DriverPortal() {
               trip_id: activeTrip.id,
               event_type: "enter",
               lat, lng,
-            }).then(({ error }) => {
+            }).then(({ error }: { error: any }) => {
               if (!error) toast.success(`Entrada: ${g.name}`);
             });
           } else if (!inside && wasInside) {
@@ -313,7 +313,7 @@ function DriverPortal() {
               trip_id: activeTrip.id,
               event_type: "exit",
               lat, lng,
-            }).then(({ error }) => {
+            }).then(({ error }: { error: any }) => {
               if (!error) toast.message(`Saída: ${g.name}`);
             });
           }

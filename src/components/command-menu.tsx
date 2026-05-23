@@ -5,7 +5,7 @@ import {
 } from "@/components/ui/command";
 import {
   LayoutDashboard, Truck, Users, Route as RouteIcon, MapPin, Fuel, AlertTriangle, Wrench,
-  Moon, Sun, Monitor, LogOut,
+  Moon, Sun, Monitor, LogOut, Bell,
 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/use-auth";
@@ -19,6 +19,7 @@ const pages = [
   { to: "/fuel", label: "Abastecimentos", icon: Fuel, group: "Navegar" },
   { to: "/tickets", label: "Multas", icon: AlertTriangle, group: "Navegar" },
   { to: "/maintenance", label: "Manutenções", icon: Wrench, group: "Navegar" },
+  { to: "/notifications", label: "Notificações", icon: Bell, group: "Navegar" },
 ];
 
 export function CommandMenu() {
