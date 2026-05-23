@@ -70,6 +70,18 @@ function isMissingColumnError(err: any): boolean {
   );
 }
 
+/** Errors we should tolerate on the trip_route_points side-effect (don't fail the save). */
+function isTolerableRoutePointsError(err: any): boolean {
+  if (isMissingColumnError(err)) return true;
+  const msg = String(err?.message ?? "");
+  return (
+    /row-level security/i.test(msg) ||
+    /permission denied/i.test(msg) ||
+    /new row violates/i.test(msg) ||
+    /42501/i.test(String(err?.code ?? "")) // insufficient_privilege
+  );
+}
+
 function EditTripPage() {
   const { tripId } = Route.useParams();
   const navigate = useNavigate();
@@ -399,7 +411,7 @@ function EditTripPage() {
         driver_instructions: form.driver_instructions || null,
       };
 
-      // Try extended first
+      // Try extended first; fall back to base on missing-column / schema errors.
       let degraded = false;
       const { error: extErr } = await (supabase.from("trips") as any).update(extendedPayload).eq("id", tripId);
       if (extErr) {
@@ -412,10 +424,14 @@ function EditTripPage() {
         }
       }
 
-      // Replace route_points (delete + insert) — best effort
+      // Replace route_points (delete + insert) — best effort.
+      // Any RLS / missing-table / permission issue is non-fatal: the trip itself
+      // is saved; we just surface a warning about route_points.
       let routePointsSaved = true;
+      let routePointsErrMsg: string | null = null;
       try {
-        await (supabase as any).from("trip_route_points").delete().eq("trip_id", tripId);
+        const { error: delErr } = await (supabase as any).from("trip_route_points").delete().eq("trip_id", tripId);
+        if (delErr && !isTolerableRoutePointsError(delErr)) throw delErr;
         if (points.length > 0) {
           const rows = points.map((p, i) => ({
             trip_id: tripId,
@@ -430,27 +446,44 @@ function EditTripPage() {
             is_required: p.is_required,
           }));
           const { error: rpErr } = await (supabase as any).from("trip_route_points").insert(rows);
-          if (rpErr && !isMissingColumnError(rpErr)) throw rpErr;
-          routePointsSaved = !rpErr;
+          if (rpErr) {
+            if (!isTolerableRoutePointsError(rpErr)) throw rpErr;
+            routePointsSaved = false;
+            routePointsErrMsg = rpErr.message;
+          }
         }
       } catch (e: any) {
-        if (!isMissingColumnError(e)) throw e;
+        if (!isTolerableRoutePointsError(e)) throw e;
         routePointsSaved = false;
+        routePointsErrMsg = e?.message ?? null;
       }
 
-      return { degraded, routePointsSaved };
+      return { degraded, routePointsSaved, routePointsErrMsg };
     },
-    onSuccess: ({ degraded, routePointsSaved }) => {
+    onSuccess: ({ degraded, routePointsSaved, routePointsErrMsg }) => {
       if (degraded) {
-        toast.warning("Viagem atualizada (modo básico). Aplique a migration 20260524100000 para habilitar todos os campos.", { duration: 6000 });
+        toast.warning("Viagem atualizada (modo básico). Aplique a migration 20260524100000 para habilitar todos os campos.", { duration: 7000 });
       } else if (points.length > 0 && !routePointsSaved) {
-        toast.warning("Viagem atualizada, mas a tabela trip_route_points ainda não existe.", { duration: 6000 });
+        const isRls = routePointsErrMsg && /row-level|permission/i.test(routePointsErrMsg);
+        toast.warning(
+          isRls
+            ? "Viagem atualizada, mas as paradas não foram salvas (RLS). Aplique a migration 20260526000000_fix_rls_arg_order.sql."
+            : "Viagem atualizada, mas a tabela trip_route_points ainda não existe. Aplique a migration 20260524100000.",
+          { duration: 8000 },
+        );
       } else {
         toast.success("Viagem atualizada");
       }
       navigate({ to: `/trips/${tripId}` });
     },
-    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
+    onError: (e: any) => {
+      const msg = e?.message ?? "Erro ao salvar";
+      if (/row-level|permission denied|new row violates/i.test(msg)) {
+        toast.error("Sem permissão para alterar (RLS). Verifique se você é admin/manager e se as migrations novas foram aplicadas.", { duration: 8000 });
+      } else {
+        toast.error(msg);
+      }
+    },
   });
 
   // ---- cancel trip ----
