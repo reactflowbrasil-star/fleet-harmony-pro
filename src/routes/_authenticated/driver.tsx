@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { countQueued, flushQueue, sendGps } from "@/lib/gps-queue";
 import { isInsideCircle } from "@/lib/geo";
 import { useWakeLock } from "@/hooks/use-pwa";
+import { DeliveryConfirmDialog } from "@/components/delivery-confirm-dialog";
 import { GuidedTripMap } from "@/components/guided-trip-map";
 
 export const Route = createFileRoute("/_authenticated/driver")({
@@ -122,6 +123,7 @@ function DriverPortal() {
     return localStorage.getItem(LGPD_KEY) === "yes";
   });
   const [endOpen, setEndOpen] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [gpsActive, setGpsActive] = useState(false);
   const [currentSpeed, setCurrentSpeed] = useState<number | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
@@ -544,6 +546,8 @@ function DriverPortal() {
           lastFix={lastFix}
           battery={battery}
           online={online}
+          livePos={livePos}
+          waypoints={activeRoutePoints ?? []}
           onEnd={() => setEndOpen(true)}
         />
       ) : openTrip ? (
@@ -591,6 +595,24 @@ function DriverPortal() {
         </>
       )}
 
+      {activeTrip && driver?.id && companyId && (
+        <button
+          onClick={() => setDeliveryOpen(true)}
+          className="surface flex w-full items-center gap-3 p-4 text-left transition-colors hover:border-success/40 active:border-success/40 sm:p-5"
+        >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-success/15 text-success">
+            <CheckCircle2 className="h-6 w-6" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-xl leading-none">Confirmar entrega</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Foto da mercadoria + assinatura do destinatário
+            </p>
+          </div>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+        </button>
+      )}
+
       <FuelQuick
         driverId={driver?.id}
         vehicleId={driver?.vehicle_id}
@@ -605,6 +627,18 @@ function DriverPortal() {
         distance={distance}
         onConfirm={confirmEndTrip}
       />
+
+      {activeTrip && driver?.id && companyId && (
+        <DeliveryConfirmDialog
+          open={deliveryOpen}
+          onOpenChange={setDeliveryOpen}
+          companyId={companyId}
+          tripId={activeTrip.id}
+          driverId={driver.id}
+          defaultPosition={lastPosRef.current}
+          onConfirmed={() => qc.invalidateQueries({ queryKey: ["my-active-trip"] })}
+        />
+      )}
     </div>
   );
 }
@@ -633,6 +667,7 @@ function ConnectivityBadge({ online, queued }: { online: boolean; queued: number
 
 function ActiveTripCard({
   trip, elapsed, gpsActive, currentSpeed, accuracy, distance, lastFix, battery, online, onEnd,
+  livePos, waypoints,
 }: {
   trip: any;
   elapsed: string;
@@ -644,11 +679,29 @@ function ActiveTripCard({
   battery: number | null;
   online: boolean;
   onEnd: () => void;
+  livePos: { lat: number; lng: number; heading: number | null; speed: number | null } | null;
+  waypoints: Array<{ lat: number; lng: number; name?: string; type?: string }>;
 }) {
   const kmh = currentSpeed != null ? Math.max(0, Math.round(currentSpeed * 3.6)) : null;
   const km = (distance / 1000).toFixed(2);
   const lastFixSecs = lastFix ? Math.floor((Date.now() - lastFix) / 1000) : null;
   const signalOk = gpsActive && lastFixSecs != null && lastFixSecs < 30;
+
+  // Build navigation waypoints: prepend current GPS as the "from", end at the planned destination
+  const navWaypoints = (() => {
+    if (waypoints.length === 0) return [];
+    // Use current position as start so directions reflect "from where I am now"
+    if (livePos) {
+      const dest = waypoints[waypoints.length - 1];
+      const stops = waypoints.slice(0, -1).filter((w) => w.type !== "origin");
+      return [
+        { lat: livePos.lat, lng: livePos.lng, name: "Minha posição", type: "origin" as const },
+        ...stops,
+        dest,
+      ];
+    }
+    return waypoints;
+  })();
 
   return (
     <div className="surface relative overflow-hidden border-primary/40 bg-primary/[0.04] p-5 sm:p-6">
@@ -669,6 +722,13 @@ function ActiveTripCard({
         <MapPin className="h-4 w-4 text-muted-foreground" />
         <span className="truncate">{trip.origin || "—"} → {trip.destination || "—"}</span>
       </p>
+
+      {/* Live guided map with turn-by-turn instructions */}
+      {navWaypoints.length >= 2 && (
+        <div className="mt-4">
+          <GuidedTripMap waypoints={navWaypoints} position={livePos} height={320} />
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-3 gap-2">
         <Tile icon={Clock} label="Tempo" value={elapsed} />
