@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-display: "Instrument Serif", "Source Serif Pro", Georgia, serif;
+  --font-display: "Bricolage Grotesque", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
@@ -185,7 +185,8 @@
 
   h1, h2, h3, h4, h5, h6, .font-display {
     font-family: var(--font-display);
-    font-weight: 400;
+    font-weight: 600;
+    font-optical-sizing: auto;
     text-wrap: balance;
     color: var(--color-foreground);
   }
@@ -253,6 +254,7 @@
   /* Display & headings (semantic tokens) */
   .text-display {
     font-family: var(--font-display);
+    font-weight: 700;
     font-size: var(--text-display);
     line-height: var(--leading-none);
     letter-spacing: var(--tracking-display);
@@ -260,6 +262,7 @@
   }
   .page-title {
     font-family: var(--font-display);
+    font-weight: 700;
     font-size: var(--text-4xl);
     line-height: var(--leading-tight);
     letter-spacing: var(--tracking-tight);
@@ -267,6 +270,7 @@
   }
   .stat-value {
     font-family: var(--font-display);
+    font-weight: 700;
     font-size: var(--text-4xl);
     line-height: var(--leading-none);
     letter-spacing: var(--tracking-tight);
@@ -274,6 +278,7 @@
   }
   .summary-value {
     font-family: var(--font-display);
+    font-weight: 700;
     font-size: var(--text-2xl);
     line-height: var(--leading-tight);
     letter-spacing: var(--tracking-snug);

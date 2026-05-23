@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/app-shell";
@@ -13,12 +13,15 @@ export const Route = createFileRoute("/_authenticated")({
   component: AuthedLayout,
 });
 
+const DRIVER_PATHS = ["/driver"];
+
 function AuthedLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
   const [isDriverOnly, setIsDriverOnly] = useState(false);
   const [resolved, setResolved] = useState(false);
 
-  // Decide once per session whether to chrome-less the driver portal.
+  // Resolve once per mount: do we have admin/manager role?
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -37,9 +40,18 @@ function AuthedLayout() {
     return () => { mounted = false; };
   }, []);
 
-  // For driver-only users on the /driver route, render a clean, full-screen
-  // layout (no admin sidebar) — matches the "app do motorista" experience.
-  const isDriverApp = isDriverOnly && (path === "/driver" || path.startsWith("/driver/"));
+  // Auto-redirect: if the user is a driver-only and lands on an admin route
+  // (e.g., from a bookmark or because RoutingAfterLogin sent them wrong),
+  // send them to /driver. Respect the user's selected kind from auth.tsx.
+  useEffect(() => {
+    if (!resolved) return;
+    if (!isDriverOnly) return;
+    if (DRIVER_PATHS.some((p) => path === p || path.startsWith(p + "/"))) return;
+    // Driver landed on an admin path — bounce to /driver.
+    navigate({ to: "/driver", replace: true });
+  }, [resolved, isDriverOnly, path, navigate]);
+
+  const isDriverApp = isDriverOnly && DRIVER_PATHS.some((p) => path === p || path.startsWith(p + "/"));
 
   if (!resolved) {
     return (

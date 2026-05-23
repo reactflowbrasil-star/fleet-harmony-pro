@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,24 +23,11 @@ import { DeliveryConfirmDialog } from "@/components/delivery-confirm-dialog";
 import { GuidedTripMap } from "@/components/guided-trip-map";
 
 export const Route = createFileRoute("/_authenticated/driver")({
-  beforeLoad: async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return;
-    const { data: driverRow } = await supabase
-      .from("drivers")
-      .select("id")
-      .eq("user_id", session.user.id)
-      .maybeSingle();
-    const { data: rolesData } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", session.user.id);
-    const roles = (rolesData ?? []).map((r: any) => r.role);
-    const isAdmin = roles.includes("admin") || roles.includes("fleet_manager");
-    if (!driverRow && !isAdmin) {
-      throw redirect({ to: "/dashboard" });
-    }
-  },
+  // No redirect: any authenticated user can land on /driver.
+  // - If they have a linked drivers row → DriverPortal shows the full app.
+  // - If not → DriverPortal renders a friendly "Acesso de motorista" empty state
+  //   asking the admin to link the account. This avoids bouncing the driver
+  //   back to /dashboard where they'd see RLS errors and the admin shell.
   component: DriverPortal,
 });
 

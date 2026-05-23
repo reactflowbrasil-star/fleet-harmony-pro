@@ -33,27 +33,30 @@ const loginSchema = z.object({
   password: z.string().min(1, "Senha obrigatória"),
 });
 
-/** After login, route to /driver if the user only has the driver role; otherwise /dashboard. */
+/** After login, route to /driver if the user only has the driver role; otherwise /dashboard.
+ *  Driver-only users ALWAYS go to /driver regardless of chosen kind to avoid
+ *  bouncing them into the admin shell where their RLS-scoped data is empty. */
 async function routeAfterLogin(userId: string, chosenKind: AccountKind, navigate: ReturnType<typeof useNavigate>) {
-  // Honor explicit choice first when it matches the user's capabilities.
   const { data: rolesData } = await supabase
     .from("user_roles")
     .select("role")
     .eq("user_id", userId);
   const roles = (rolesData ?? []).map((r: any) => r.role as string);
   const isAdminish = roles.includes("admin") || roles.includes("fleet_manager");
-  const isDriver = roles.includes("driver") || !isAdminish;
 
-  if (chosenKind === "driver" && isDriver) {
+  // Driver-only user → always /driver (the chosen "Empresa" selection is
+  // ignored because that user wouldn't be able to use the admin panel).
+  if (!isAdminish) {
     navigate({ to: "/driver" });
     return;
   }
-  if (chosenKind === "company" && isAdminish) {
+
+  // Admin/manager — respect their explicit choice.
+  if (chosenKind === "driver") {
+    navigate({ to: "/driver" });
+  } else {
     navigate({ to: "/dashboard" });
-    return;
   }
-  // Mismatch: fall back to whatever the user actually has access to.
-  navigate({ to: isAdminish ? "/dashboard" : "/driver" });
 }
 
 function AuthPage() {
