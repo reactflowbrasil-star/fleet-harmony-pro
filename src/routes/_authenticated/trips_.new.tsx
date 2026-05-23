@@ -258,12 +258,12 @@ function NewTripPage() {
     notes: "",
   });
 
-  // when driver changes, suggest their linked vehicle
+  // when driver changes, suggest their linked vehicle (only if no vehicle picked yet)
   useEffect(() => {
     if (!form.driver_id || form.vehicle_id) return;
     const d = drivers?.find((x: any) => x.id === form.driver_id);
     if (d?.vehicle_id) setForm((f) => ({ ...f, vehicle_id: d.vehicle_id as string }));
-  }, [form.driver_id, drivers]);
+  }, [form.driver_id, form.vehicle_id, drivers]);
 
   const origin = points.find((p) => p.type === "origin");
   const destination = points.find((p) => p.type === "destination");
@@ -525,7 +525,7 @@ function NewTripPage() {
             ) : (
               <ul className="space-y-2">
                 {points.map((p, i) => (
-                  <li key={i} className="rounded-md border border-border bg-background p-2">
+                  <li key={`${p.type}-${p.lat.toFixed(5)}-${p.lng.toFixed(5)}-${i}`} className="rounded-md border border-border bg-background p-2">
                     <div className="flex items-center gap-2">
                       <span
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"

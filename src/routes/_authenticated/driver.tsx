@@ -75,15 +75,19 @@ function useBattery() {
     const nav: any = navigator;
     if (!nav.getBattery) return;
     let battery: any;
+    let handler: (() => void) | null = null;
     let mounted = true;
     nav.getBattery().then((b: any) => {
       if (!mounted) return;
       battery = b;
-      const update = () => setLevel(Math.round(b.level * 100));
-      update();
-      b.addEventListener("levelchange", update);
+      handler = () => setLevel(Math.round(b.level * 100));
+      handler();
+      b.addEventListener("levelchange", handler);
     });
-    return () => { mounted = false; if (battery) battery.removeEventListener("levelchange", () => {}); };
+    return () => {
+      mounted = false;
+      if (battery && handler) battery.removeEventListener("levelchange", handler);
+    };
   }, []);
   return level;
 }
@@ -348,7 +352,7 @@ function DriverPortal() {
               lat, lng,
             }).then(({ error }: { error: any }) => {
               if (!error) toast.success(`Entrada: ${g.name}`);
-            });
+            }).catch(() => { /* silent — RLS/missing migration */ });
           } else if (!inside && wasInside) {
             insideRef.current.delete(g.id);
             (supabase as any).from("geofence_events").insert({
@@ -361,7 +365,7 @@ function DriverPortal() {
               lat, lng,
             }).then(({ error }: { error: any }) => {
               if (!error) toast.message(`Saída: ${g.name}`);
-            });
+            }).catch(() => { /* silent */ });
           }
         }
       },

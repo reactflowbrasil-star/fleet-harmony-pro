@@ -711,7 +711,7 @@ function EditTripPage() {
             ) : (
               <ul className="space-y-2">
                 {points.map((p, i) => (
-                  <li key={i} className="rounded-md border border-border bg-background p-2">
+                  <li key={`${p.type}-${p.lat.toFixed(5)}-${p.lng.toFixed(5)}-${i}`} className="rounded-md border border-border bg-background p-2">
                     <div className="flex items-center gap-2">
                       <span
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
@@ -739,9 +739,9 @@ function EditTripPage() {
                           <option key={t} value={t}>{pointTypeLabel[t]}</option>
                         ))}
                       </select>
-                      <button onClick={() => movePoint(i, -1)} className="rounded p-1 text-muted-foreground hover:text-foreground" title="Subir"><ArrowUp className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => movePoint(i, 1)} className="rounded p-1 text-muted-foreground hover:text-foreground" title="Descer"><ArrowDown className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => removePoint(i)} className="rounded p-1 text-muted-foreground hover:text-destructive" title="Remover"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => movePoint(i, -1)} className="tap rounded text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Subir" title="Subir"><ArrowUp className="h-4 w-4" /></button>
+                      <button onClick={() => movePoint(i, 1)} className="tap rounded text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Descer" title="Descer"><ArrowDown className="h-4 w-4" /></button>
+                      <button onClick={() => removePoint(i)} className="tap rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Remover" title="Remover"><Trash2 className="h-4 w-4" /></button>
                     </div>
                   </li>
                 ))}
