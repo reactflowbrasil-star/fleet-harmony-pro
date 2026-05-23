@@ -1,22 +1,22 @@
 {
   "expo": {
-    "name": "Frotap Driver",
-    "slug": "frotap-driver",
+    "name": "FrotaGo Driver",
+    "slug": "frotago-driver",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./src/assets/icon.png",
-    "scheme": "frotapdriver",
-    "userInterfaceStyle": "automatic",
+    "scheme": "frotagodriver",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": false,
     "splash": {
       "image": "./src/assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1a3d2e"
+      "backgroundColor": "#0A0A0F"
     },
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.frotap.driverapp",
+      "bundleIdentifier": "com.frotago.driverapp",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Sua localização é utilizada durante viagens ativas para fins de segurança e gestão operacional da frota.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Sua localização precisa ser acessada em segundo plano para manter o rastreamento durante a viagem.",
@@ -25,11 +25,11 @@
       }
     },
     "android": {
-      "package": "com.frotap.driverapp",
+      "package": "com.frotago.driverapp",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/adaptive-icon.png",
-        "backgroundColor": "#1a3d2e"
+        "backgroundColor": "#FF6B1A"
       },
       "permissions": [
         "android.permission.INTERNET",
@@ -63,6 +63,6 @@
         "projectId": "00000000-0000-0000-0000-000000000000"
       }
     },
-    "owner": "frotap"
+    "owner": "frotago"
   }
 }
