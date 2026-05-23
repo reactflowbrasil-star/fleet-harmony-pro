@@ -28,7 +28,7 @@ export async function clientSideCreateDriverAuth({
   email: string;
   password: string;
   fullName?: string | null;
-}): Promise<{ user_id: string; needsEmailConfirmation: boolean }> {
+}): Promise<{ user_id: string; needsEmailConfirmation: boolean; linkedUserId: boolean }> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error("Variáveis VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY não estão definidas");
   }
@@ -47,26 +47,35 @@ export async function clientSideCreateDriverAuth({
     },
   });
   if (error) throw error;
-  const userId = data.user?.id;
-  if (!userId) throw new Error("Cadastro retornou sem user id");
 
-  // Detect whether email confirmation is required (no session was returned).
+  // Supabase normally returns user.id. With certain project settings
+  // ("Confirm email" required AND obscure-existing-user enabled) the response
+  // can have user=null. In that case the account WAS created (or already
+  // existed) — we just can't link drivers.user_id from here.
+  const userId = data.user?.id ?? data.session?.user?.id ?? null;
   const needsEmailConfirmation = !data.session;
 
-  // Link drivers.user_id + ensure 'driver' role exists, using the ADMIN's
-  // current session (the main supabase client).
-  const { error: linkErr } = await supabase
-    .from("drivers")
-    .update({ user_id: userId, email })
-    .eq("id", driverId);
-  if (linkErr) throw linkErr;
+  if (userId) {
+    // Link drivers.user_id + ensure 'driver' role exists, using the ADMIN's
+    // current session (the main supabase client).
+    const { error: linkErr } = await supabase
+      .from("drivers")
+      .update({ user_id: userId, email })
+      .eq("id", driverId);
+    if (linkErr) throw linkErr;
 
-  // Try to add the role (RLS may block this — that's OK; admin can add manually).
-  await (supabase as any)
-    .from("user_roles")
-    .insert({ user_id: userId, role: "driver" })
-    .then((r: any) => r) // swallow
-    .catch(() => { /* ignore */ });
+    // Try to add the role (RLS may block this — that's OK; admin can add manually).
+    await (supabase as any)
+      .from("user_roles")
+      .insert({ user_id: userId, role: "driver" })
+      .then((r: any) => r) // swallow
+      .catch(() => { /* ignore */ });
+  } else {
+    // No user_id returned. Still update drivers.email so the admin can re-link
+    // later via the Edge Function. The signup itself succeeded (no error
+    // thrown), so we treat this as a partial success.
+    await supabase.from("drivers").update({ email }).eq("id", driverId);
+  }
 
-  return { user_id: userId, needsEmailConfirmation };
+  return { user_id: userId ?? "", needsEmailConfirmation, linkedUserId: !!userId };
 }

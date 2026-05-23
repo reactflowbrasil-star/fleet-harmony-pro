@@ -169,13 +169,18 @@ function DriversPage() {
           const looksMissing = !!edgeErrMsg && /not found|404|404 page not found|FunctionsHttpError|Failed to send/i.test(edgeErrMsg);
           try {
             const { clientSideCreateDriverAuth } = await import("@/lib/driver-signup");
-            const { needsEmailConfirmation } = await clientSideCreateDriverAuth({
+            const { needsEmailConfirmation, linkedUserId } = await clientSideCreateDriverAuth({
               driverId,
               email,
               password,
               fullName: payload.full_name,
             });
-            if (needsEmailConfirmation) {
+            if (!linkedUserId) {
+              toast.warning(
+                "Conta criada no Supabase, mas o user_id não pôde ser linkado automaticamente (confirme o email no Supabase ou deploy a Edge Function 'create-driver-user' para linkar).",
+                { duration: 12000 },
+              );
+            } else if (needsEmailConfirmation) {
               toast.warning(
                 "Motorista salvo e conta criada. ⚠️ É necessário confirmar o e-mail antes de logar. Desative 'Confirm email' em Supabase → Authentication → Providers → Email para liberar imediatamente.",
                 { duration: 12000 },
@@ -456,13 +461,18 @@ function PasswordDialog({
       const looksMissing = !!edgeErrMsg && /not found|404|FunctionsHttpError|Failed to send/i.test(edgeErrMsg);
       try {
         const { clientSideCreateDriverAuth } = await import("@/lib/driver-signup");
-        const { needsEmailConfirmation } = await clientSideCreateDriverAuth({
+        const { needsEmailConfirmation, linkedUserId } = await clientSideCreateDriverAuth({
           driverId: driver.id,
           email: em,
           password,
           fullName: driver.full_name,
         });
-        if (needsEmailConfirmation) {
+        if (!linkedUserId) {
+          toast.warning(
+            "Conta criada no Supabase, mas o user_id não pôde ser linkado automaticamente. Confirme o email no Supabase ou deploy a Edge Function 'create-driver-user'.",
+            { duration: 12000 },
+          );
+        } else if (needsEmailConfirmation) {
           toast.warning(
             "Acesso criado. ⚠️ É necessário confirmar o e-mail antes de logar. Desative 'Confirm email' em Supabase → Authentication → Providers → Email.",
             { duration: 12000 },

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import { useQuery } from "@tanstack/react-query";
@@ -47,6 +47,7 @@ const pointTypeColor: Record<string, string> = {
 
 function TripDetailPage() {
   const { tripId } = Route.useParams();
+  const navigate = useNavigate();
   const fetchToken = useServerFn(getMapboxToken);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -299,8 +300,11 @@ function TripDetailPage() {
             {trip.scheduled_start_at && ` · prevista para ${new Date(trip.scheduled_start_at).toLocaleString("pt-BR")}`}
           </p>
         </div>
-        <Button asChild className="h-10 shrink-0">
-          <Link to={`/trips/${trip.id}/edit` as any}><Pencil className="mr-2 h-4 w-4" />Editar</Link>
+        <Button
+          onClick={() => navigate({ to: "/trips/$tripId/edit", params: { tripId: trip.id } } as any)}
+          className="h-10 shrink-0"
+        >
+          <Pencil className="mr-2 h-4 w-4" />Editar
         </Button>
       </div>
 
