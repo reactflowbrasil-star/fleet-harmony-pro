@@ -5,8 +5,38 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-display: "Instrument Serif", Georgia, serif;
-  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Instrument Serif", "Source Serif Pro", Georgia, serif;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  /* Fluid type scale — Perfect Fourth (1.333) at desktop, tightened on mobile */
+  --text-2xs:    clamp(0.625rem, 0.06vw + 0.61rem, 0.6875rem);   /* 10–11 */
+  --text-xs:     clamp(0.6875rem, 0.06vw + 0.67rem, 0.75rem);    /* 11–12 */
+  --text-sm:     clamp(0.8125rem, 0.06vw + 0.79rem, 0.875rem);   /* 13–14 */
+  --text-base:   clamp(0.9375rem, 0.07vw + 0.92rem, 1rem);       /* 15–16 */
+  --text-lg:     clamp(1.0625rem, 0.13vw + 1.03rem, 1.125rem);   /* 17–18 */
+  --text-xl:     clamp(1.1875rem, 0.18vw + 1.14rem, 1.25rem);    /* 19–20 */
+  --text-2xl:    clamp(1.4375rem, 0.35vw + 1.35rem, 1.625rem);   /* 23–26 */
+  --text-3xl:    clamp(1.75rem, 0.65vw + 1.6rem, 2.125rem);      /* 28–34 */
+  --text-4xl:    clamp(2.125rem, 1.1vw + 1.85rem, 2.75rem);      /* 34–44 */
+  --text-5xl:    clamp(2.5rem, 1.7vw + 2.1rem, 3.5rem);          /* 40–56 */
+  --text-display:clamp(2.75rem, 3vw + 1.75rem, 4.5rem);          /* 44–72 */
+
+  /* Tracking by size — negative for display, neutral for body, positive for micro caps */
+  --tracking-display: -0.025em;
+  --tracking-tight: -0.018em;
+  --tracking-snug: -0.011em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.02em;
+  --tracking-wider: 0.06em;
+  --tracking-widest: 0.16em;
+
+  /* Leading */
+  --leading-none: 1;
+  --leading-tight: 1.1;
+  --leading-snug: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -133,29 +163,77 @@
   html {
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01", "cpsp";
+    font-optical-sizing: auto;
+    font-variant-ligatures: common-ligatures contextual;
   }
 
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    font-weight: 400;
+    letter-spacing: var(--tracking-normal);
+    font-variant-numeric: tabular-nums slashed-zero;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-wrap: pretty;
     overscroll-behavior-y: none;
   }
 
-  h1, h2, h3, .font-display {
+  h1, h2, h3, h4, h5, h6, .font-display {
     font-family: var(--font-display);
-    letter-spacing: -0.015em;
+    font-weight: 400;
     text-wrap: balance;
-    line-height: 1.05;
+    color: var(--color-foreground);
   }
 
-  h1 { font-size: clamp(1.875rem, 4vw + 0.75rem, 2.5rem); }
-  h2 { font-size: clamp(1.5rem, 2.5vw + 0.75rem, 2rem); }
-  h3 { font-size: clamp(1.25rem, 1.5vw + 0.75rem, 1.5rem); }
+  h1 { font-size: var(--text-4xl); letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
+  h2 { font-size: var(--text-3xl); letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
+  h3 { font-size: var(--text-2xl); letter-spacing: var(--tracking-snug); line-height: var(--leading-snug); }
+  h4 { font-size: var(--text-xl);  letter-spacing: var(--tracking-snug); line-height: var(--leading-snug); }
+  h5 { font-size: var(--text-lg);  letter-spacing: var(--tracking-snug); line-height: var(--leading-snug); }
+  h6 { font-size: var(--text-base); letter-spacing: var(--tracking-snug); line-height: var(--leading-snug); }
+
+  p { line-height: var(--leading-normal); }
+  small { font-size: var(--text-xs); }
+
+  /* Inline links inside prose-like content */
+  a:where(:not([class])) {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    text-decoration-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
+    transition: text-decoration-color 150ms ease;
+  }
+  a:where(:not([class])):hover { text-decoration-color: var(--color-primary); }
+
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 0.78em;
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    background-color: var(--color-muted);
+    color: var(--color-muted-foreground);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 1px 0 var(--color-border);
+    font-variant-numeric: tabular-nums;
+  }
+
+  code:where(:not([class])) {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    padding: 0.15em 0.35em;
+    border-radius: 4px;
+    background-color: var(--color-muted);
+    color: var(--color-foreground);
+  }
+
+  /* Buttons + inputs don't inherit body's tabular-nums — let CSS sort it locally */
+  button, input, select, textarea { font-feature-settings: inherit; }
 
   :focus-visible {
     outline: 2px solid var(--color-ring);
@@ -172,9 +250,68 @@
   .safe-pl { padding-left: max(env(safe-area-inset-left), 0px); }
   .safe-pr { padding-right: max(env(safe-area-inset-right), 0px); }
 
-  .page-title { font-family: var(--font-display); font-size: clamp(1.875rem, 4vw + 0.75rem, 2.5rem); letter-spacing: -0.015em; line-height: 1.05; }
-  .stat-value { font-family: var(--font-display); font-size: clamp(1.75rem, 3vw + 0.75rem, 2.5rem); line-height: 1; letter-spacing: -0.02em; }
-  .summary-value { font-family: var(--font-display); font-size: clamp(1.375rem, 2vw + 0.75rem, 1.875rem); line-height: 1.05; letter-spacing: -0.015em; }
+  /* Display & headings (semantic tokens) */
+  .text-display {
+    font-family: var(--font-display);
+    font-size: var(--text-display);
+    line-height: var(--leading-none);
+    letter-spacing: var(--tracking-display);
+    text-wrap: balance;
+  }
+  .page-title {
+    font-family: var(--font-display);
+    font-size: var(--text-4xl);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+    text-wrap: balance;
+  }
+  .stat-value {
+    font-family: var(--font-display);
+    font-size: var(--text-4xl);
+    line-height: var(--leading-none);
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
+  .summary-value {
+    font-family: var(--font-display);
+    font-size: var(--text-2xl);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-snug);
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
+
+  /* Eyebrow / category labels: small uppercase, generous tracking */
+  .text-eyebrow {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: var(--tracking-widest);
+    text-transform: uppercase;
+    color: var(--color-muted-foreground);
+  }
+
+  /* Lead paragraph (hero, page intro) */
+  .text-lead {
+    font-size: var(--text-lg);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted-foreground);
+    text-wrap: pretty;
+    max-width: 65ch;
+  }
+
+  /* Body sizes (drop-in replacements that respect the type scale) */
+  .text-body   { font-size: var(--text-base); line-height: var(--leading-normal); }
+  .text-meta   { font-size: var(--text-xs);   line-height: var(--leading-snug); color: var(--color-muted-foreground); }
+  .text-caption{ font-size: var(--text-2xs);  line-height: var(--leading-snug); color: var(--color-muted-foreground); letter-spacing: var(--tracking-wide); }
+
+  /* Numeric utilities */
+  .font-numeric    { font-variant-numeric: tabular-nums slashed-zero; }
+  .font-numeric-alt{ font-variant-numeric: tabular-nums slashed-zero; font-feature-settings: "ss01"; }
+  .font-mono       { font-family: var(--font-mono); }
+
+  /* Limit measure of prose-like content */
+  .measure       { max-width: 65ch; }
+  .measure-tight { max-width: 45ch; }
 
   .surface { background-color: var(--color-card); border: 1px solid var(--color-border); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); }
   .surface-elevated { background: var(--gradient-card); border: 1px solid var(--color-border); border-radius: var(--radius-xl); box-shadow: var(--shadow-pop); }
