@@ -287,19 +287,30 @@ function NewTripPage() {
       if (!origin) throw new Error("Defina a origem no mapa");
       if (!destination) throw new Error("Defina o destino no mapa");
 
-      const payload: any = {
+      // Always-present columns (schema base)
+      const basePayload: Record<string, any> = {
         company_id: companyId,
         driver_id: form.driver_id,
         vehicle_id: form.vehicle_id,
-        title: form.title.trim(),
         origin: origin.name || origin.address || null,
+        destination: destination.name || destination.address || null,
+        start_at: form.scheduled_start_at ? new Date(form.scheduled_start_at).toISOString() : null,
+        end_at: form.scheduled_end_at ? new Date(form.scheduled_end_at).toISOString() : null,
+        distance_m: estimate.distance_m,
+        notes: form.notes || null,
+        status: "scheduled",
+      };
+
+      // Extended columns from migration 20260524100000_planned_trips.sql
+      const extendedPayload: Record<string, any> = {
+        ...basePayload,
+        title: form.title.trim(),
         origin_lat: origin.lat,
         origin_lng: origin.lng,
-        destination: destination.name || destination.address || null,
         destination_lat: destination.lat,
         destination_lng: destination.lng,
-        scheduled_start_at: form.scheduled_start_at ? new Date(form.scheduled_start_at).toISOString() : null,
-        scheduled_end_at: form.scheduled_end_at ? new Date(form.scheduled_end_at).toISOString() : null,
+        scheduled_start_at: basePayload.start_at,
+        scheduled_end_at: basePayload.end_at,
         estimated_distance_m: estimate.distance_m,
         estimated_duration_s: estimate.duration_s,
         priority: form.priority || null,
@@ -307,18 +318,48 @@ function NewTripPage() {
         service_order: form.service_order || null,
         cargo_type: form.cargo_type || null,
         driver_instructions: form.driver_instructions || null,
-        notes: form.notes || null,
-        status: "assigned",
         created_by: user?.id ?? null,
+        status: "assigned", // available only after migration extends the enum
       };
 
-      const { data: trip, error } = await supabase.from("trips").insert(payload).select("id").single();
-      if (error) throw error;
-      if (!trip) throw new Error("Falha ao salvar viagem");
+      function isMissingColumnError(err: any): boolean {
+        const msg = String(err?.message ?? "");
+        const code = String(err?.code ?? "");
+        return (
+          code === "PGRST204" ||
+          /schema cache/i.test(msg) ||
+          /column .* does not exist/i.test(msg) ||
+          /invalid input value for enum/i.test(msg)
+        );
+      }
 
+      // Try extended first; fall back to base if migration not applied.
+      let tripId: string | null = null;
+      let degraded = false;
+      {
+        const { data, error } = await supabase
+          .from("trips")
+          .insert(extendedPayload)
+          .select("id")
+          .single();
+        if (!error && data) {
+          tripId = data.id;
+        } else if (error && isMissingColumnError(error)) {
+          const fb = await supabase.from("trips").insert(basePayload).select("id").single();
+          if (fb.error) throw fb.error;
+          tripId = fb.data!.id;
+          degraded = true;
+        } else if (error) {
+          throw error;
+        }
+      }
+      if (!tripId) throw new Error("Falha ao salvar viagem");
+
+      // Best-effort: persist route points if the table exists.
+      let routePointsSaved = false;
       if (points.length > 0) {
         const rows = points.map((p, i) => ({
-          trip_id: trip.id,
+          trip_id: tripId,
           company_id: companyId,
           point_order: i + 1,
           point_type: p.type,
@@ -330,12 +371,28 @@ function NewTripPage() {
           is_required: p.is_required,
         }));
         const { error: rpErr } = await supabase.from("trip_route_points" as any).insert(rows);
-        if (rpErr) throw rpErr;
+        if (rpErr && !isMissingColumnError(rpErr) && !/relation .* does not exist/i.test(rpErr.message)) {
+          throw rpErr;
+        }
+        routePointsSaved = !rpErr;
       }
-      return trip.id;
+
+      return { id: tripId, degraded, routePointsSaved };
     },
-    onSuccess: (id) => {
-      toast.success("Viagem cadastrada e enviada ao motorista");
+    onSuccess: ({ id, degraded, routePointsSaved }) => {
+      if (degraded) {
+        toast.warning(
+          "Viagem cadastrada com dados básicos. Aplique a migration 20260524100000_planned_trips.sql no Supabase para habilitar título, prioridade, cliente e rota multi-ponto.",
+          { duration: 8000 },
+        );
+      } else if (points.length > 0 && !routePointsSaved) {
+        toast.warning(
+          "Viagem cadastrada, mas a tabela trip_route_points ainda não existe. Aplique a migration 20260524100000 para salvar as paradas.",
+          { duration: 6000 },
+        );
+      } else {
+        toast.success("Viagem cadastrada e enviada ao motorista");
+      }
       navigate({ to: `/trips/${id}` });
     },
     onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
