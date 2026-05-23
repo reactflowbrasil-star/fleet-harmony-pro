@@ -1,13 +1,14 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Route as RouteIcon, Search } from "lucide-react";
+import { Plus, Route as RouteIcon, Search } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/trips")({
   component: TripsPage,
@@ -75,9 +76,14 @@ function TripsPage() {
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      <header>
-        <h1 className="page-title">Viagens</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Histórico de rotas da frota</p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="page-title">Viagens</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Histórico de rotas da frota</p>
+        </div>
+        <Button asChild className="h-10 shrink-0">
+          <Link to="/trips/new"><Plus className="mr-2 h-4 w-4" />Nova viagem</Link>
+        </Button>
       </header>
 
       <div className="grid grid-cols-3 gap-2 sm:gap-4">

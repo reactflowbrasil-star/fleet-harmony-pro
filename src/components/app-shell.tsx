@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Truck, Users, Route as RouteIcon, MapPin, LogOut, Smartphone,
   Fuel, AlertTriangle, Wrench, Menu, Bell, Search, Sun, Moon, Monitor,
-  ChevronRight, Settings, User,
+  ChevronRight, Settings, User, Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -29,6 +29,8 @@ const titleMap: Record<string, string> = {
   "/fuel": "Abastecimentos",
   "/tickets": "Multas",
   "/maintenance": "Manutenções",
+  "/geofences": "Geocercas",
+  "/alerts": "Alertas",
   "/driver": "Portal motorista",
 };
 
@@ -36,22 +38,25 @@ function useBadges() {
   return useQuery({
     queryKey: ["nav-badges"],
     queryFn: async () => {
-      const [tk, fl, mt] = await Promise.all([
+      const lastHour = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const [tk, fl, mt, gf] = await Promise.all([
         supabase.from("tickets").select("id", { count: "exact", head: true }).eq("status", "pending"),
         supabase.from("fuel_logs").select("id", { count: "exact", head: true }).eq("status", "pending"),
         supabase.from("maintenance").select("id", { count: "exact", head: true }).lt("next_date", new Date().toISOString().slice(0, 10)),
+        (supabase as any).from("geofence_events").select("id", { count: "exact", head: true }).gte("occurred_at", lastHour),
       ]);
       return {
         tickets: tk.count ?? 0,
         fuel: fl.count ?? 0,
         maintenance: mt.count ?? 0,
+        geofence: gf.count ?? 0,
       };
     },
     refetchInterval: 60_000,
   });
 }
 
-function buildSections(badges: { tickets: number; fuel: number; maintenance: number } | undefined): NavSection[] {
+function buildSections(badges: { tickets: number; fuel: number; maintenance: number; geofence: number } | undefined): NavSection[] {
   return [
     {
       title: "Operação",
@@ -59,6 +64,7 @@ function buildSections(badges: { tickets: number; fuel: number; maintenance: num
         { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
         { to: "/map", label: "Mapa ao vivo", icon: MapPin },
         { to: "/trips", label: "Viagens", icon: RouteIcon },
+        { to: "/alerts", label: "Alertas", icon: Bell },
       ],
     },
     {
@@ -66,6 +72,7 @@ function buildSections(badges: { tickets: number; fuel: number; maintenance: num
       items: [
         { to: "/vehicles", label: "Veículos", icon: Truck },
         { to: "/drivers", label: "Motoristas", icon: Users },
+        { to: "/geofences", label: "Geocercas", icon: Shield, badge: badges?.geofence },
       ],
     },
     {

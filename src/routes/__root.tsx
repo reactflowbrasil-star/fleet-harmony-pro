@@ -12,6 +12,8 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import appCss from "../styles.css?url";
 import { AuthProvider } from "@/hooks/use-auth";
+import { ThemeProvider } from "@/hooks/use-theme";
+import { useServiceWorker } from "@/hooks/use-pwa";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -58,11 +60,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Frotap— Gestão de Frotas" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      { title: "Frotap — Gestão de Frotas" },
       { name: "description", content: "SaaS completo para gestão de frotas com rastreamento GPS em tempo real, controle de motoristas, abastecimentos, multas e manutenções." },
-      { property: "og:title", content: "Frotap— Gestão de Frotas" },
-      { name: "twitter:title", content: "Frotap— Gestão de Frotas" },
+      { name: "theme-color", content: "#1a3d2e" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "Frotap" },
+      { property: "og:title", content: "Frotap — Gestão de Frotas" },
+      { name: "twitter:title", content: "Frotap — Gestão de Frotas" },
       { property: "og:description", content: "SaaS completo para gestão de frotas com rastreamento GPS em tempo real, controle de motoristas, abastecimentos, multas e manutenções." },
       { name: "twitter:description", content: "SaaS completo para gestão de frotas com rastreamento GPS em tempo real, controle de motoristas, abastecimentos, multas e manutenções." },
       { name: "twitter:card", content: "summary" },
@@ -70,6 +76,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "icon", type: "image/svg+xml", href: "/icon-192.svg" },
+      { rel: "apple-touch-icon", href: "/icon-192.svg" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" },
@@ -85,7 +94,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <head><HeadContent /></head>
+      <head>
+        <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('fleetguard-theme')||'system';var r=t==='system'?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;var d=document.documentElement;d.classList.remove('light','dark');d.classList.add(r);d.style.colorScheme=r;}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body>{children}<Scripts /></body>
     </html>
   );
@@ -106,13 +122,16 @@ function AuthListener() {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useServiceWorker();
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <AuthListener />
-        <Outlet />
-        <Toaster />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AuthListener />
+          <Outlet />
+          <Toaster />
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

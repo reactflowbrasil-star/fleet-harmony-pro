@@ -17,10 +17,13 @@ import { Route as AuthenticatedTripsRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedTicketsRouteImport } from './routes/_authenticated/tickets'
 import { Route as AuthenticatedMapRouteImport } from './routes/_authenticated/map'
 import { Route as AuthenticatedMaintenanceRouteImport } from './routes/_authenticated/maintenance'
+import { Route as AuthenticatedGeofencesRouteImport } from './routes/_authenticated/geofences'
 import { Route as AuthenticatedFuelRouteImport } from './routes/_authenticated/fuel'
 import { Route as AuthenticatedDriversRouteImport } from './routes/_authenticated/drivers'
 import { Route as AuthenticatedDriverRouteImport } from './routes/_authenticated/driver'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
+import { Route as AuthenticatedTripsNewRouteImport } from './routes/_authenticated/trips_.new'
 import { Route as AuthenticatedTripsTripIdRouteImport } from './routes/_authenticated/trips_.$tripId'
 
 const AuthRoute = AuthRouteImport.update({
@@ -63,6 +66,11 @@ const AuthenticatedMaintenanceRoute =
     path: '/maintenance',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedGeofencesRoute = AuthenticatedGeofencesRouteImport.update({
+  id: '/geofences',
+  path: '/geofences',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedFuelRoute = AuthenticatedFuelRouteImport.update({
   id: '/fuel',
   path: '/fuel',
@@ -83,6 +91,16 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAlertsRoute = AuthenticatedAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedTripsNewRoute = AuthenticatedTripsNewRouteImport.update({
+  id: '/trips_/new',
+  path: '/trips/new',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedTripsTripIdRoute =
   AuthenticatedTripsTripIdRouteImport.update({
     id: '/trips_/$tripId',
@@ -93,91 +111,109 @@ const AuthenticatedTripsTripIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/alerts': typeof AuthenticatedAlertsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/driver': typeof AuthenticatedDriverRoute
   '/drivers': typeof AuthenticatedDriversRoute
   '/fuel': typeof AuthenticatedFuelRoute
+  '/geofences': typeof AuthenticatedGeofencesRoute
   '/maintenance': typeof AuthenticatedMaintenanceRoute
   '/map': typeof AuthenticatedMapRoute
   '/tickets': typeof AuthenticatedTicketsRoute
   '/trips': typeof AuthenticatedTripsRoute
   '/vehicles': typeof AuthenticatedVehiclesRoute
   '/trips/$tripId': typeof AuthenticatedTripsTripIdRoute
+  '/trips/new': typeof AuthenticatedTripsNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/alerts': typeof AuthenticatedAlertsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/driver': typeof AuthenticatedDriverRoute
   '/drivers': typeof AuthenticatedDriversRoute
   '/fuel': typeof AuthenticatedFuelRoute
+  '/geofences': typeof AuthenticatedGeofencesRoute
   '/maintenance': typeof AuthenticatedMaintenanceRoute
   '/map': typeof AuthenticatedMapRoute
   '/tickets': typeof AuthenticatedTicketsRoute
   '/trips': typeof AuthenticatedTripsRoute
   '/vehicles': typeof AuthenticatedVehiclesRoute
   '/trips/$tripId': typeof AuthenticatedTripsTripIdRoute
+  '/trips/new': typeof AuthenticatedTripsNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_authenticated/alerts': typeof AuthenticatedAlertsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/driver': typeof AuthenticatedDriverRoute
   '/_authenticated/drivers': typeof AuthenticatedDriversRoute
   '/_authenticated/fuel': typeof AuthenticatedFuelRoute
+  '/_authenticated/geofences': typeof AuthenticatedGeofencesRoute
   '/_authenticated/maintenance': typeof AuthenticatedMaintenanceRoute
   '/_authenticated/map': typeof AuthenticatedMapRoute
   '/_authenticated/tickets': typeof AuthenticatedTicketsRoute
   '/_authenticated/trips': typeof AuthenticatedTripsRoute
   '/_authenticated/vehicles': typeof AuthenticatedVehiclesRoute
   '/_authenticated/trips_/$tripId': typeof AuthenticatedTripsTripIdRoute
+  '/_authenticated/trips_/new': typeof AuthenticatedTripsNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/auth'
+    | '/alerts'
     | '/dashboard'
     | '/driver'
     | '/drivers'
     | '/fuel'
+    | '/geofences'
     | '/maintenance'
     | '/map'
     | '/tickets'
     | '/trips'
     | '/vehicles'
     | '/trips/$tripId'
+    | '/trips/new'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
+    | '/alerts'
     | '/dashboard'
     | '/driver'
     | '/drivers'
     | '/fuel'
+    | '/geofences'
     | '/maintenance'
     | '/map'
     | '/tickets'
     | '/trips'
     | '/vehicles'
     | '/trips/$tripId'
+    | '/trips/new'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/_authenticated/alerts'
     | '/_authenticated/dashboard'
     | '/_authenticated/driver'
     | '/_authenticated/drivers'
     | '/_authenticated/fuel'
+    | '/_authenticated/geofences'
     | '/_authenticated/maintenance'
     | '/_authenticated/map'
     | '/_authenticated/tickets'
     | '/_authenticated/trips'
     | '/_authenticated/vehicles'
     | '/_authenticated/trips_/$tripId'
+    | '/_authenticated/trips_/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -244,6 +280,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMaintenanceRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/geofences': {
+      id: '/_authenticated/geofences'
+      path: '/geofences'
+      fullPath: '/geofences'
+      preLoaderRoute: typeof AuthenticatedGeofencesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/fuel': {
       id: '/_authenticated/fuel'
       path: '/fuel'
@@ -272,6 +315,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/alerts': {
+      id: '/_authenticated/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AuthenticatedAlertsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/trips_/new': {
+      id: '/_authenticated/trips_/new'
+      path: '/trips/new'
+      fullPath: '/trips/new'
+      preLoaderRoute: typeof AuthenticatedTripsNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/trips_/$tripId': {
       id: '/_authenticated/trips_/$tripId'
       path: '/trips/$tripId'
@@ -283,29 +340,35 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDriverRoute: typeof AuthenticatedDriverRoute
   AuthenticatedDriversRoute: typeof AuthenticatedDriversRoute
   AuthenticatedFuelRoute: typeof AuthenticatedFuelRoute
+  AuthenticatedGeofencesRoute: typeof AuthenticatedGeofencesRoute
   AuthenticatedMaintenanceRoute: typeof AuthenticatedMaintenanceRoute
   AuthenticatedMapRoute: typeof AuthenticatedMapRoute
   AuthenticatedTicketsRoute: typeof AuthenticatedTicketsRoute
   AuthenticatedTripsRoute: typeof AuthenticatedTripsRoute
   AuthenticatedVehiclesRoute: typeof AuthenticatedVehiclesRoute
   AuthenticatedTripsTripIdRoute: typeof AuthenticatedTripsTripIdRoute
+  AuthenticatedTripsNewRoute: typeof AuthenticatedTripsNewRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAlertsRoute: AuthenticatedAlertsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDriverRoute: AuthenticatedDriverRoute,
   AuthenticatedDriversRoute: AuthenticatedDriversRoute,
   AuthenticatedFuelRoute: AuthenticatedFuelRoute,
+  AuthenticatedGeofencesRoute: AuthenticatedGeofencesRoute,
   AuthenticatedMaintenanceRoute: AuthenticatedMaintenanceRoute,
   AuthenticatedMapRoute: AuthenticatedMapRoute,
   AuthenticatedTicketsRoute: AuthenticatedTicketsRoute,
   AuthenticatedTripsRoute: AuthenticatedTripsRoute,
   AuthenticatedVehiclesRoute: AuthenticatedVehiclesRoute,
   AuthenticatedTripsTripIdRoute: AuthenticatedTripsTripIdRoute,
+  AuthenticatedTripsNewRoute: AuthenticatedTripsNewRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -319,3 +382,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

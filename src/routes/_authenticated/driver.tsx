@@ -13,9 +13,12 @@ import { toast } from "sonner";
 import {
   Play, Square, Fuel, MapPin, Truck, AlertCircle, Wifi, WifiOff,
   Gauge, Battery, Clock, Route as RouteIcon, Shield, CheckCircle2,
+  ExternalLink, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { countQueued, flushQueue, sendGps } from "@/lib/gps-queue";
+import { isInsideCircle } from "@/lib/geo";
+import { useWakeLock } from "@/hooks/use-pwa";
 
 export const Route = createFileRoute("/_authenticated/driver")({
   beforeLoad: async () => {
@@ -98,11 +101,20 @@ function useElapsed(start?: string | null) {
   return `${h}:${m}:${sec}`;
 }
 
+type ActiveGeofence = {
+  id: string;
+  name: string;
+  center_lat: number;
+  center_lng: number;
+  radius_m: number;
+};
+
 function DriverPortal() {
   const { user, companyId } = useAuth();
   const qc = useQueryClient();
   const watchIdRef = useRef<number | null>(null);
   const lastPosRef = useRef<{ lat: number; lng: number } | null>(null);
+  const insideRef = useRef<Set<string>>(new Set());
 
   const [consent, setConsent] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -133,6 +145,21 @@ function DriverPortal() {
     enabled: !!user,
   });
 
+  const { data: geofences } = useQuery({
+    queryKey: ["active-geofences", companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      const { data } = await (supabase as any)
+        .from("geofences")
+        .select("id, name, center_lat, center_lng, radius_m")
+        .eq("company_id", companyId)
+        .eq("active", true);
+      return (data ?? []) as ActiveGeofence[];
+    },
+    enabled: !!companyId,
+    refetchInterval: 60_000,
+  });
+
   const { data: activeTrip, refetch: refetchTrip } = useQuery({
     queryKey: ["my-active-trip", driver?.id],
     queryFn: async () => {
@@ -148,7 +175,41 @@ function DriverPortal() {
     enabled: !!driver?.id,
   });
 
+  const { data: assignedTrips, refetch: refetchAssigned } = useQuery({
+    queryKey: ["my-assigned-trips", driver?.id],
+    queryFn: async () => {
+      if (!driver?.id) return [];
+      const { data } = await supabase
+        .from("trips")
+        .select("*, vehicle:vehicles(plate, model, brand)")
+        .eq("driver_id", driver.id)
+        .in("status", ["scheduled", "assigned", "viewed", "paused"] as any)
+        .order("scheduled_start_at", { ascending: true, nullsFirst: false });
+      return (data ?? []) as any[];
+    },
+    enabled: !!driver?.id,
+    refetchInterval: 30_000,
+  });
+
+  // realtime: refetch when admin assigns/edits my trips
+  useEffect(() => {
+    if (!driver?.id) return;
+    const ch = supabase
+      .channel(`driver-trips-${driver.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "trips", filter: `driver_id=eq.${driver.id}` }, () => {
+        refetchAssigned();
+        refetchTrip();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [driver?.id, refetchAssigned, refetchTrip]);
+
+  const [openTripId, setOpenTripId] = useState<string | null>(null);
+  const openTrip = useMemo(() => (assignedTrips ?? []).find((t) => t.id === openTripId) ?? null, [assignedTrips, openTripId]);
+
   const elapsed = useElapsed(activeTrip?.start_at);
+  // Keep screen awake while there's an active trip so the browser doesn't suspend GPS.
+  useWakeLock(!!activeTrip);
 
   // refresh queued count periodically
   useEffect(() => {
@@ -220,6 +281,43 @@ function DriverPortal() {
         if (result.queued) {
           countQueued().then(setQueued).catch(() => {});
         }
+
+        // Geofence detection
+        for (const g of (geofences ?? [])) {
+          const inside = isInsideCircle(
+            { lat, lng },
+            { lat: g.center_lat, lng: g.center_lng },
+            Number(g.radius_m),
+          );
+          const wasInside = insideRef.current.has(g.id);
+          if (inside && !wasInside) {
+            insideRef.current.add(g.id);
+            (supabase as any).from("geofence_events").insert({
+              company_id: companyId,
+              geofence_id: g.id,
+              vehicle_id: activeTrip.vehicle_id,
+              driver_id: activeTrip.driver_id,
+              trip_id: activeTrip.id,
+              event_type: "enter",
+              lat, lng,
+            }).then(({ error }) => {
+              if (!error) toast.success(`Entrada: ${g.name}`);
+            });
+          } else if (!inside && wasInside) {
+            insideRef.current.delete(g.id);
+            (supabase as any).from("geofence_events").insert({
+              company_id: companyId,
+              geofence_id: g.id,
+              vehicle_id: activeTrip.vehicle_id,
+              driver_id: activeTrip.driver_id,
+              trip_id: activeTrip.id,
+              event_type: "exit",
+              lat, lng,
+            }).then(({ error }) => {
+              if (!error) toast.message(`Saída: ${g.name}`);
+            });
+          }
+        }
       },
       (err) => {
         console.warn("GPS error", err);
@@ -280,6 +378,28 @@ function DriverPortal() {
     if (error) return toast.error(error.message);
     toast.success("Viagem iniciada. GPS ativo.");
     refetchTrip();
+  }
+
+  async function startAssignedTrip(trip: any) {
+    if (!consent) { toast.error("Aceite o consentimento de localização para iniciar."); return; }
+    if (!companyId) return;
+    const ok = await requestGpsPermission();
+    if (!ok) return;
+    const startKmStr = window.prompt("Quilometragem inicial do veículo (opcional):", "");
+    const startKm = startKmStr ? Number(startKmStr) : null;
+    const { error } = await supabase
+      .from("trips")
+      .update({
+        status: "in_progress",
+        start_at: new Date().toISOString(),
+        start_km: startKm,
+      })
+      .eq("id", trip.id);
+    if (error) return toast.error(error.message);
+    toast.success("Viagem iniciada. GPS ativo.");
+    setOpenTripId(null);
+    refetchTrip();
+    refetchAssigned();
   }
 
   async function confirmEndTrip(endKm: number | null) {
@@ -382,24 +502,49 @@ function DriverPortal() {
           online={online}
           onEnd={() => setEndOpen(true)}
         />
+      ) : openTrip ? (
+        <AssignedTripDetail
+          trip={openTrip}
+          consent={consent}
+          onBack={() => setOpenTripId(null)}
+          onStart={() => startAssignedTrip(openTrip)}
+        />
       ) : (
-        <div className="surface p-5 sm:p-6">
-          <h3 className="font-display text-2xl">Iniciar nova viagem</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            O GPS será ativado automaticamente após confirmação.
-          </p>
-          <form onSubmit={startTrip} className="mt-4 space-y-3">
-            <div><Label>Origem</Label><Input name="origin" placeholder="Ex.: Garagem" className="h-11" /></div>
-            <div><Label>Destino</Label><Input name="destination" placeholder="Ex.: Cliente XYZ" className="h-11" /></div>
-            <div><Label>Km inicial</Label><Input name="start_km" type="number" min={0} className="h-11" /></div>
-            <Button type="submit" className="h-12 w-full text-base" disabled={!driver?.vehicle_id || !consent}>
-              <Play className="mr-2 h-5 w-5" />Iniciar viagem
-            </Button>
-            {!consent && (
-              <p className="text-center text-xs text-muted-foreground">Aceite o consentimento de localização acima para iniciar.</p>
-            )}
-          </form>
-        </div>
+        <>
+          {(assignedTrips ?? []).length > 0 && (
+            <section className="space-y-3">
+              <div className="flex items-end justify-between gap-3">
+                <h2 className="font-display text-xl">Próximas viagens</h2>
+                <span className="text-[11px] text-muted-foreground">{assignedTrips!.length} atribuída{assignedTrips!.length === 1 ? "" : "s"}</span>
+              </div>
+              {assignedTrips!.map((t) => (
+                <AssignedTripCard key={t.id} trip={t} onOpen={() => setOpenTripId(t.id)} />
+              ))}
+            </section>
+          )}
+
+          <div className="surface p-5 sm:p-6">
+            <h3 className="font-display text-2xl">
+              {(assignedTrips ?? []).length > 0 ? "Iniciar viagem ad-hoc" : "Iniciar nova viagem"}
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {(assignedTrips ?? []).length > 0
+                ? "Use apenas para viagens não cadastradas pelo gestor."
+                : "O GPS será ativado automaticamente após confirmação."}
+            </p>
+            <form onSubmit={startTrip} className="mt-4 space-y-3">
+              <div><Label>Origem</Label><Input name="origin" placeholder="Ex.: Garagem" className="h-11" /></div>
+              <div><Label>Destino</Label><Input name="destination" placeholder="Ex.: Cliente XYZ" className="h-11" /></div>
+              <div><Label>Km inicial</Label><Input name="start_km" type="number" min={0} className="h-11" /></div>
+              <Button type="submit" className="h-12 w-full text-base" disabled={!driver?.vehicle_id || !consent}>
+                <Play className="mr-2 h-5 w-5" />Iniciar viagem
+              </Button>
+              {!consent && (
+                <p className="text-center text-xs text-muted-foreground">Aceite o consentimento de localização acima para iniciar.</p>
+              )}
+            </form>
+          </div>
+        </>
       )}
 
       <FuelQuick
@@ -552,6 +697,151 @@ function EndTripDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function AssignedTripCard({ trip, onOpen }: { trip: any; onOpen: () => void }) {
+  const statusBadge: Record<string, string> = {
+    assigned: "bg-primary/15 text-primary",
+    viewed: "bg-primary/10 text-primary",
+    scheduled: "bg-muted text-muted-foreground",
+    paused: "bg-warning/20 text-warning",
+  };
+  const statusLabel: Record<string, string> = {
+    assigned: "Atribuída", viewed: "Visualizada", scheduled: "Agendada", paused: "Pausada",
+  };
+  return (
+    <button onClick={onOpen} className="surface w-full p-4 text-left transition-colors hover:border-primary/40">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-base font-semibold">{trip.title || `${trip.origin || "—"} → ${trip.destination || "—"}`}</h3>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {trip.vehicle?.plate ?? "—"} · {trip.vehicle?.brand ?? ""} {trip.vehicle?.model ?? ""}
+          </p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusBadge[trip.status] ?? "bg-muted text-muted-foreground"}`}>
+          {statusLabel[trip.status] ?? trip.status}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+        <div>
+          <p className="text-muted-foreground">Início previsto</p>
+          <p className="font-medium">{trip.scheduled_start_at ? new Date(trip.scheduled_start_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—"}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Distância est.</p>
+          <p className="font-medium">{trip.estimated_distance_m ? `${(Number(trip.estimated_distance_m) / 1000).toFixed(1)} km` : "—"}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Duração est.</p>
+          <p className="font-medium">{trip.estimated_duration_s ? `${Math.round(Number(trip.estimated_duration_s) / 60)} min` : "—"}</p>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-end text-xs text-primary">
+        Ver detalhes <ChevronRight className="ml-0.5 h-3 w-3" />
+      </div>
+    </button>
+  );
+}
+
+function AssignedTripDetail({ trip, consent, onBack, onStart }: { trip: any; consent: boolean; onBack: () => void; onStart: () => void }) {
+  const { data: routePoints } = useQuery({
+    queryKey: ["trip-points-driver", trip.id],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("trip_route_points").select("*").eq("trip_id", trip.id).order("point_order");
+      if (error) return [];
+      return data as any[];
+    },
+  });
+
+  useEffect(() => {
+    (async () => { try { await (supabase as any).rpc("fn_mark_trip_viewed", { _trip_id: trip.id }); } catch {} })();
+  }, [trip.id]);
+
+  const origin = routePoints?.find((p) => p.point_type === "origin");
+  const destination = routePoints?.find((p) => p.point_type === "destination");
+  const stops = (routePoints ?? []).filter((p) => p.point_type !== "origin" && p.point_type !== "destination");
+  const navLat = destination?.latitude ?? trip.destination_lat;
+  const navLng = destination?.longitude ?? trip.destination_lng;
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ChevronRight className="h-4 w-4 rotate-180" />Voltar
+      </button>
+      <header>
+        <h2 className="font-display text-2xl">{trip.title || "Viagem"}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {trip.scheduled_start_at ? `Previsão: ${new Date(trip.scheduled_start_at).toLocaleString("pt-BR")}` : "Sem horário previsto"}
+        </p>
+      </header>
+
+      <section className="surface p-4">
+        <h3 className="mb-2 font-display text-lg">Rota</h3>
+        <div className="space-y-2 text-sm">
+          {origin && (
+            <div className="flex items-start gap-2">
+              <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-success" />
+              <div className="min-w-0">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Origem</div>
+                <div className="truncate font-medium">{origin.name ?? trip.origin}</div>
+                <div className="text-[11px] text-muted-foreground">{Number(origin.latitude).toFixed(5)}, {Number(origin.longitude).toFixed(5)}</div>
+              </div>
+            </div>
+          )}
+          {stops.map((p, i) => (
+            <div key={p.id} className="flex items-start gap-2">
+              <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-primary" />
+              <div className="min-w-0">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Parada {i + 1}</div>
+                <div className="truncate font-medium">{p.name ?? p.point_type}</div>
+                <div className="text-[11px] text-muted-foreground">{Number(p.latitude).toFixed(5)}, {Number(p.longitude).toFixed(5)}</div>
+              </div>
+            </div>
+          ))}
+          {destination && (
+            <div className="flex items-start gap-2">
+              <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-destructive" />
+              <div className="min-w-0">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Destino</div>
+                <div className="truncate font-medium">{destination.name ?? trip.destination}</div>
+                <div className="text-[11px] text-muted-foreground">{Number(destination.latitude).toFixed(5)}, {Number(destination.longitude).toFixed(5)}</div>
+              </div>
+            </div>
+          )}
+          {!origin && !destination && (
+            <p className="text-sm text-muted-foreground">{trip.origin || "—"} → {trip.destination || "—"}</p>
+          )}
+        </div>
+        {trip.driver_instructions && (
+          <div className="mt-3 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs">
+            <div className="mb-1 font-semibold text-warning">Instruções</div>
+            <div>{trip.driver_instructions}</div>
+          </div>
+        )}
+      </section>
+
+      {navLat && navLng && (
+        <div className="flex flex-wrap gap-2">
+          <a href={`https://www.google.com/maps/dir/?api=1&destination=${navLat},${navLng}&travelmode=driving`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">
+            <ExternalLink className="h-4 w-4" />Google Maps
+          </a>
+          <a href={`https://waze.com/ul?ll=${navLat},${navLng}&navigate=yes`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">
+            <ExternalLink className="h-4 w-4" />Waze
+          </a>
+          <a href={`http://maps.apple.com/?daddr=${navLat},${navLng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">
+            <ExternalLink className="h-4 w-4" />Apple Maps
+          </a>
+        </div>
+      )}
+
+      <Button onClick={onStart} disabled={!consent} className="h-12 w-full text-base">
+        <Play className="mr-2 h-5 w-5" />Iniciar viagem
+      </Button>
+      {!consent && (
+        <p className="text-center text-xs text-muted-foreground">Aceite o consentimento de localização acima para iniciar.</p>
+      )}
+    </div>
   );
 }
 
