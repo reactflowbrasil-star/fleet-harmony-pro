@@ -271,9 +271,34 @@ function LiveMap() {
     }
     load();
 
+    // Real-time: when a gps_points INSERT arrives we patch the matching point
+    // in state directly (no roundtrip). For brand-new trip_ids we trigger a
+    // full load so the marker is created with proper plate/driver labels.
     const ch = supabase
       .channel("gps-live-map")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "gps_points" }, () => load())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "gps_points" }, (payload) => {
+        const row: any = payload.new;
+        if (!row?.trip_id) return;
+        setPoints((prev) => {
+          const idx = prev.findIndex((p) => p.trip_id === row.trip_id);
+          if (idx === -1) {
+            // unknown trip — full reload to fetch plate/driver
+            load();
+            return prev;
+          }
+          const next = prev.slice();
+          next[idx] = {
+            ...next[idx],
+            lat: row.lat,
+            lng: row.lng,
+            speed: row.speed,
+            heading: row.heading,
+            accuracy: row.accuracy,
+            recorded_at: row.recorded_at,
+          };
+          return next;
+        });
+      })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "trips" }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };

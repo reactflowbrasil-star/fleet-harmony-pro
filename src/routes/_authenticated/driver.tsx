@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { countQueued, flushQueue, sendGps } from "@/lib/gps-queue";
 import { isInsideCircle } from "@/lib/geo";
 import { useWakeLock } from "@/hooks/use-pwa";
+import { GuidedTripMap } from "@/components/guided-trip-map";
 
 export const Route = createFileRoute("/_authenticated/driver")({
   beforeLoad: async () => {
@@ -127,6 +128,7 @@ function DriverPortal() {
   const [distance, setDistance] = useState(0);
   const [lastFix, setLastFix] = useState<number | null>(null);
   const [queued, setQueued] = useState(0);
+  const [livePos, setLivePos] = useState<{ lat: number; lng: number; heading: number | null; speed: number | null } | null>(null);
 
   const online = useOnline();
   const battery = useBattery();
@@ -173,6 +175,46 @@ function DriverPortal() {
       return data;
     },
     enabled: !!driver?.id,
+  });
+
+  const { data: activeRoutePoints } = useQuery({
+    queryKey: ["active-route-points", activeTrip?.id],
+    queryFn: async () => {
+      if (!activeTrip?.id) return [] as Array<{ lat: number; lng: number; name: string; type: string }>;
+      const { data, error } = await (supabase as any)
+        .from("trip_route_points")
+        .select("latitude, longitude, name, point_type, point_order")
+        .eq("trip_id", activeTrip.id)
+        .order("point_order");
+      if (error || !data) {
+        // fallback to trip origin/destination lat/lng if route_points table is absent
+        const built: Array<{ lat: number; lng: number; name: string; type: string }> = [];
+        if ((activeTrip as any).origin_lat != null && (activeTrip as any).origin_lng != null) {
+          built.push({
+            lat: Number((activeTrip as any).origin_lat),
+            lng: Number((activeTrip as any).origin_lng),
+            name: (activeTrip as any).origin ?? "Origem",
+            type: "origin",
+          });
+        }
+        if ((activeTrip as any).destination_lat != null && (activeTrip as any).destination_lng != null) {
+          built.push({
+            lat: Number((activeTrip as any).destination_lat),
+            lng: Number((activeTrip as any).destination_lng),
+            name: (activeTrip as any).destination ?? "Destino",
+            type: "destination",
+          });
+        }
+        return built;
+      }
+      return (data as any[]).map((p) => ({
+        lat: Number(p.latitude),
+        lng: Number(p.longitude),
+        name: p.name ?? p.point_type,
+        type: p.point_type,
+      }));
+    },
+    enabled: !!activeTrip?.id,
   });
 
   const { data: assignedTrips, refetch: refetchAssigned } = useQuery({
@@ -245,6 +287,7 @@ function DriverPortal() {
       setCurrentSpeed(null);
       setAccuracy(null);
       setDistance(0);
+      setLivePos(null);
       lastPosRef.current = null;
       return;
     }
@@ -261,6 +304,7 @@ function DriverPortal() {
         setCurrentSpeed(sp ?? null);
         setAccuracy(pos.coords.accuracy ?? null);
         setLastFix(Date.now());
+        setLivePos({ lat, lng, heading: pos.coords.heading ?? null, speed: sp ?? null });
 
         if (lastPosRef.current) {
           const d = haversineMeters(lastPosRef.current, { lat, lng });

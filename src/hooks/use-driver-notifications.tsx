@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { playAlert, showBrowserNotification, vibrate } from "@/lib/notification-sound";
+import { playAlert, playUrgentAlarm, showBrowserNotification, vibrate } from "@/lib/notification-sound";
 
 export type AppNotification = {
   id: string;
@@ -133,14 +133,21 @@ export function DriverNotificationsProvider({ children }: { children: ReactNode 
     // surface
     setLastIncoming(n);
 
-    // sound + vibrate (may fail silently if no user gesture yet)
-    try { playAlert(); } catch { /* ignore */ }
-    vibrate([200, 80, 200]);
+    // High-priority notifications get the loud siren (loops ~7s).
+    // Other notifications get the pleasant two-tone bell.
+    const urgent = n.type === "new_trip" || n.type === "trip_cancelled" || n.type === "general_alert";
+    try {
+      if (urgent) playUrgentAlarm(6);
+      else playAlert();
+    } catch { /* ignore */ }
+    vibrate(urgent ? [500, 120, 500, 120, 500] : [200, 80, 200]);
 
-    // browser notification (only fires when permission granted)
+    // Browser/system push notification (works even when tab is in background,
+    // since we register the service worker in __root)
     showBrowserNotification(n.title, {
       body: n.message ?? undefined,
       tag: n.id,
+      requireInteraction: urgent,
       data: { url: n.trip_id ? `/driver` : "/notifications", trip_id: n.trip_id },
     });
   }, [qc]);

@@ -43,6 +43,64 @@ export function playAlert() {
   tone(1175, 0.32, 0.18); // perfect fifth
 }
 
+/* ----------------------------------------------------------
+ * Loud, attention-grabbing alarm (siren-like) that loops until stopped.
+ * Use for high-priority pushes (nova viagem, ocorrência crítica).
+ * -------------------------------------------------------- */
+
+let urgentTimer: number | null = null;
+let urgentStop: (() => void) | null = null;
+
+/** Single siren sweep: ~1.2s rising then falling tone at high volume. */
+function sirenSweep(c: AudioContext, t0: number, volume = 0.55) {
+  const osc = c.createOscillator();
+  const gain = c.createGain();
+  osc.type = "square"; // brighter, louder perception
+  // Frequency sweep 700 → 1300 → 700
+  osc.frequency.setValueAtTime(700, t0);
+  osc.frequency.linearRampToValueAtTime(1300, t0 + 0.45);
+  osc.frequency.linearRampToValueAtTime(700, t0 + 0.9);
+  // Envelope with strong attack
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(volume, t0 + 0.03);
+  gain.gain.setValueAtTime(volume, t0 + 0.85);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.0);
+  osc.connect(gain).connect(c.destination);
+  osc.start(t0);
+  osc.stop(t0 + 1.05);
+}
+
+/**
+ * Start a loud looping siren + repeating vibration. Loops until stopUrgentAlarm()
+ * is called or the optional `maxLoops` is reached (default 6 ≈ 7.5s, enough to wake
+ * a driver but not annoying forever).
+ */
+export function playUrgentAlarm(maxLoops = 6) {
+  stopUrgentAlarm();
+  const c = getCtx();
+  if (!c) return;
+  let count = 0;
+  const period = 1.25; // 1s siren + 0.25s gap
+  function fire() {
+    if (!c) return;
+    sirenSweep(c, c.currentTime + 0.02);
+    vibrate([500, 120, 500, 120, 500]);
+    count++;
+    if (count >= maxLoops) return;
+    urgentTimer = window.setTimeout(fire, period * 1000);
+  }
+  fire();
+  urgentStop = () => {
+    if (urgentTimer != null) { clearTimeout(urgentTimer); urgentTimer = null; }
+    try { c.suspend().then(() => c.resume()).catch(() => {}); } catch { /* ignore */ }
+  };
+}
+
+export function stopUrgentAlarm() {
+  if (urgentStop) { urgentStop(); urgentStop = null; }
+  if (urgentTimer != null) { clearTimeout(urgentTimer); urgentTimer = null; }
+}
+
 /** Subtle confirmation tone (~0.15s). */
 export function playTick() {
   tone(660, 0.12, 0);

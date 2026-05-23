@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getMapboxToken, geocodeAddress, getDirections, type GeocodeResult } from "@/lib/mapbox.functions";
+import { getMapboxToken, getDirections } from "@/lib/mapbox.functions";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, MapPin, Plus, Search, Target, Trash2, XCircle,
+  ArrowDown, ArrowLeft, ArrowUp, MapPin, Plus, Target, Trash2, XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -74,12 +75,12 @@ function EditTripPage() {
   const navigate = useNavigate();
   const { companyId } = useAuth();
   const fetchToken = useServerFn(getMapboxToken);
-  const doGeocode = useServerFn(geocodeAddress);
   const doDirections = useServerFn(getDirections);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
 
   // ---- load existing trip + route_points ----
   const { data: trip, isLoading: tripLoading } = useQuery({
@@ -143,6 +144,10 @@ function EditTripPage() {
         zoom: 10,
       });
       mapRef.current.addControl(new mapboxgl.NavigationControl(), "top-right");
+      mapRef.current.on("moveend", () => {
+        const c = mapRef.current?.getCenter();
+        if (c) setMapCenter([c.lng, c.lat]);
+      });
     })();
     return () => { cancelled = true; mapRef.current?.remove(); mapRef.current = null; };
   }, [fetchToken]);
@@ -352,21 +357,6 @@ function EditTripPage() {
     })();
     return () => { cancelled = true; };
   }, [points, doDirections]);
-
-  // ---- search ----
-  const [search, setSearch] = useState("");
-  const [results, setResults] = useState<GeocodeResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  async function runSearch() {
-    if (!search.trim()) return;
-    setSearching(true);
-    try {
-      const { results } = await doGeocode({ data: { query: search } });
-      setResults(results);
-    } finally {
-      setSearching(false);
-    }
-  }
 
   const origin = points.find((p) => p.type === "origin");
   const destination = points.find((p) => p.type === "destination");
@@ -655,40 +645,14 @@ function EditTripPage() {
           </section>
 
           <section className="surface space-y-3 p-4">
-            <h2 className="font-display text-lg">Buscar endereço</h2>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); runSearch(); } }}
-                  placeholder="Rua, bairro, cidade…"
-                  className="pl-9"
-                />
-              </div>
-              <Button variant="outline" onClick={runSearch} disabled={searching}>{searching ? "Buscando…" : "Buscar"}</Button>
+            <div className="flex items-center justify-between">
+              <h2 className="font-display text-lg">Buscar endereço</h2>
+              <span className="text-[11px] text-muted-foreground">Sugestões em tempo real · Brasil</span>
             </div>
-            {results.length > 0 && (
-              <ul className="space-y-1 text-sm">
-                {results.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 hover:bg-accent">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{r.name}</div>
-                      <div className="truncate text-xs text-muted-foreground">{r.address}</div>
-                    </div>
-                    <div className="flex gap-1">
-                      <button onClick={() => addOrReplacePoint({ type: "origin" }, { lat: r.lat, lng: r.lng, name: r.name, address: r.address })}
-                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-card">Origem</button>
-                      <button onClick={() => addOrReplacePoint({ type: "stop" }, { lat: r.lat, lng: r.lng, name: r.name, address: r.address })}
-                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-card">Parada</button>
-                      <button onClick={() => addOrReplacePoint({ type: "destination" }, { lat: r.lat, lng: r.lng, name: r.name, address: r.address })}
-                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-card">Destino</button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <AddressAutocomplete
+              proximity={mapCenter}
+              onPick={(kind, r) => addOrReplacePoint({ type: kind }, { lat: r.lat, lng: r.lng, name: r.name, address: r.address })}
+            />
           </section>
 
           <section className="surface space-y-3 p-4">

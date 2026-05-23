@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Bell, Clock, MapPin, Route as RouteIcon } from "lucide-react";
 import { useDriverNotifications } from "@/hooks/use-driver-notifications";
+import { stopUrgentAlarm } from "@/lib/notification-sound";
 
 export function NewTripAlert() {
   const { lastIncoming, consumeIncoming, markRead } = useDriverNotifications();
@@ -30,11 +31,13 @@ export function NewTripAlert() {
     : null;
 
   function openTrip() {
+    stopUrgentAlarm();
     void markRead(lastIncoming!.id);
     consumeIncoming();
     navigate({ to: "/driver" });
   }
   function dismiss() {
+    stopUrgentAlarm();
     void markRead(lastIncoming!.id);
     consumeIncoming();
   }
