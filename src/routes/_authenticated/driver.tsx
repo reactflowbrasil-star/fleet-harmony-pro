@@ -103,7 +103,7 @@ type ActiveGeofence = {
 };
 
 function DriverPortal() {
-  const { user, companyId } = useAuth();
+  const { user, companyId, signOut } = useAuth();
   const qc = useQueryClient();
   const watchIdRef = useRef<number | null>(null);
   const lastPosRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -126,15 +126,31 @@ function DriverPortal() {
   const online = useOnline();
   const battery = useBattery();
 
-  const { data: driver } = useQuery({
+  const { data: driver, refetch: refetchDriver } = useQuery({
     queryKey: ["my-driver", user?.id],
     queryFn: async () => {
       if (!user) return null;
-      const { data } = await supabase
+      let { data } = await supabase
         .from("drivers")
         .select("*, vehicle:vehicles(*)")
         .eq("user_id", user.id)
         .maybeSingle();
+
+      // If no driver row is linked yet, try to auto-link via RPC
+      // (matches the caller's email to an unlinked drivers row).
+      if (!data) {
+        try {
+          const { data: linkedId, error } = await (supabase as any).rpc("fn_link_driver_self");
+          if (!error && linkedId) {
+            const { data: refetched } = await supabase
+              .from("drivers")
+              .select("*, vehicle:vehicles(*)")
+              .eq("id", linkedId)
+              .maybeSingle();
+            data = refetched ?? null;
+          }
+        } catch { /* RPC may not be deployed — leave as null */ }
+      }
       return data;
     },
     enabled: !!user,
@@ -464,12 +480,30 @@ function DriverPortal() {
   if (!user) return null;
   if (driver === null) {
     return (
-      <div className="mx-auto max-w-md surface p-8 text-center">
+      <div className="mx-auto max-w-md surface space-y-4 p-6 text-center sm:p-8">
         <AlertCircle className="mx-auto h-10 w-10 text-warning" />
-        <h2 className="mt-4 font-display text-2xl">Acesso de motorista</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Seu usuário ainda não está vinculado a um cadastro de motorista. Solicite ao administrador.
+        <div>
+          <h2 className="font-display text-2xl">Acesso de motorista</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Seu login funciona, mas ainda não há um cadastro de motorista vinculado a este e-mail.
+          </p>
+        </div>
+        <div className="rounded-lg border border-border bg-muted/40 p-3 text-left text-xs">
+          <p className="text-muted-foreground">Você está logado como</p>
+          <p className="mt-0.5 truncate font-mono font-semibold">{user.email}</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          O administrador da sua empresa precisa cadastrar você em <span className="font-semibold">Motoristas</span> usando
+          exatamente este e-mail. Depois, clique abaixo para tentar vincular novamente.
         </p>
+        <div className="flex flex-col gap-2">
+          <Button onClick={() => refetchDriver()} className="h-11 w-full">
+            Tentar vincular novamente
+          </Button>
+          <Button variant="outline" onClick={() => signOut()} className="h-10 w-full">
+            Sair e entrar com outro usuário
+          </Button>
+        </div>
       </div>
     );
   }
