@@ -200,4 +200,95 @@
     background-repeat: no-repeat;
     padding-right: 2rem;
   }
+
+  /* LP — animated grid background */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, color-mix(in oklab, var(--color-foreground) 8%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--color-foreground) 8%, transparent) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, #000 40%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, #000 40%, transparent 100%);
+  }
+
+  /* LP — soft ambient glow under hero */
+  .bg-aurora::before {
+    content: "";
+    position: absolute;
+    inset: -20% -10% auto -10%;
+    height: 75%;
+    background:
+      radial-gradient(45% 35% at 30% 30%, color-mix(in oklab, var(--color-primary) 35%, transparent) 0%, transparent 70%),
+      radial-gradient(40% 30% at 75% 25%, color-mix(in oklab, var(--color-gold) 28%, transparent) 0%, transparent 70%);
+    filter: blur(40px);
+    z-index: 0;
+    pointer-events: none;
+    animation: aurora-shift 16s ease-in-out infinite alternate;
+  }
+
+  @keyframes aurora-shift {
+    0% { transform: translate3d(-2%, -1%, 0) rotate(0deg); }
+    100% { transform: translate3d(2%, 1%, 0) rotate(2deg); }
+  }
+
+  /* LP — gradient text */
+  .text-gradient {
+    background: linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 50%, var(--color-gold)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* LP — marquee scroller */
+  .marquee {
+    display: flex;
+    overflow: hidden;
+    mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  }
+  .marquee-track {
+    display: flex;
+    gap: 3rem;
+    flex-shrink: 0;
+    min-width: 100%;
+    animation: marquee 32s linear infinite;
+  }
+  .marquee:hover .marquee-track { animation-play-state: paused; }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-100%); }
+  }
+
+  /* LP — float */
+  .float-slow { animation: float 8s ease-in-out infinite; }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  /* LP — soft pulse for "live" dots */
+  .pulse-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.5;
+    animation: pulse-ring 2s ease-out infinite;
+  }
+  @keyframes pulse-ring {
+    0% { transform: scale(1); opacity: 0.5; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+
+  /* LP — shimmer for skeleton/CTA */
+  .shimmer {
+    background: linear-gradient(90deg, transparent, color-mix(in oklab, #fff 30%, transparent), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 2.4s linear infinite;
+  }
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
 }
