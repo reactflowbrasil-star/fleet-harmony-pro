@@ -6,8 +6,13 @@ import { getMapboxToken } from "@/lib/mapbox.functions";
 import { supabase } from "@/integrations/supabase/client";
 import {
   AlertCircle, MapPin, Truck, Search, Crosshair, Layers, Pause, Play, X,
-  Gauge, Signal, Clock, ChevronLeft, ChevronRight, ArrowUpRight,
+  Gauge, Signal, Clock, ChevronLeft, ChevronRight, ArrowUpRight, Maximize2,
+  Activity,
 } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuRadioGroup,
+  DropdownMenuRadioItem, DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -101,17 +106,19 @@ function buildMarkerEl(p: LivePoint, status: Status): {
 } {
   const meta = STATUS_META[status];
   const root = document.createElement("div");
+  root.className = "fleet-marker";
   root.style.cssText = `
     position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;
     cursor:pointer;font-family:Inter,sans-serif;will-change:transform;
   `;
 
   const badge = document.createElement("div");
+  badge.className = "fleet-plate";
   badge.style.cssText = `
     background:#fff;color:#111;font-weight:700;font-size:10px;letter-spacing:.4px;
-    padding:2px 6px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,.18);
+    padding:3px 7px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.18),0 1px 2px rgba(0,0,0,.08);
     border:1px solid rgba(0,0,0,.05);white-space:nowrap;line-height:1.1;
-    display:flex;align-items:center;gap:4px;transform:translateY(2px);
+    display:flex;align-items:center;gap:4px;
   `;
   badge.textContent = p.vehicle_plate ?? "—";
   if (p.speed != null && (p.speed ?? 0) * 3.6 >= 1) {
@@ -122,12 +129,13 @@ function buildMarkerEl(p: LivePoint, status: Status): {
   }
 
   const body = document.createElement("div");
+  body.className = "fleet-body";
   body.style.cssText = `
-    position:relative;width:34px;height:34px;border-radius:50%;
+    position:relative;width:32px;height:32px;border-radius:50%;
     background:${meta.color};border:3px solid #fff;
-    box-shadow:0 0 0 4px ${meta.ring},0 6px 16px rgba(0,0,0,.28);
+    box-shadow:0 0 0 3px ${meta.ring},0 6px 14px rgba(0,0,0,.22);
     display:flex;align-items:center;justify-content:center;color:#fff;
-    font-size:14px;transition:background .3s ease,box-shadow .3s ease;
+    font-size:14px;transition:transform .2s ease, box-shadow .2s ease;
   `;
 
   const arrow = document.createElement("div");
@@ -437,6 +445,12 @@ function LiveMap() {
   /* ---------- follow selected vehicle ---------- */
   useEffect(() => {
     const map = mapRef.current;
+    // Toggle is-selected class on all markers to reveal/hide plate badge + scale up the body.
+    Object.entries(markersRef.current).forEach(([id, entry]) => {
+      const root = entry.marker.getElement();
+      if (id === selectedTripId) root.classList.add("is-selected");
+      else root.classList.remove("is-selected");
+    });
     if (!map || !selectedTripId) return;
     const entry = markersRef.current[selectedTripId];
     const point = enriched.find((p) => p.trip_id === selectedTripId);
@@ -462,6 +476,21 @@ function LiveMap() {
     Object.values(markersRef.current).forEach((m) => m.popup.remove());
   }
 
+  /** Fit camera to all currently visible vehicles. */
+  function fitAll() {
+    const map = mapRef.current;
+    if (!map) return;
+    const pts = filtered.length > 0 ? filtered : enriched;
+    if (pts.length === 0) return;
+    if (pts.length === 1) {
+      map.flyTo({ center: [pts[0].lng, pts[0].lat], zoom: 14, duration: 700 });
+      return;
+    }
+    const b = new mapboxgl.LngLatBounds();
+    pts.forEach((p) => b.extend([p.lng, p.lat]));
+    map.fitBounds(b, { padding: { top: 80, right: 80, bottom: 120, left: 80 }, maxZoom: 14, duration: 700 });
+  }
+
   /* ---------- counts for legend ---------- */
   const counts = useMemo(() => {
     const c: Record<Status, number> = { moving: 0, stopped: 0, signal_weak: 0, signal_lost: 0, offline: 0 };
@@ -478,76 +507,160 @@ function LiveMap() {
     <div className="space-y-4">
       <style>{`
         @keyframes fleet-pulse {
-          0% { transform: scale(1); opacity: .55 }
+          0% { transform: scale(1); opacity: .5 }
           100% { transform: scale(2.6); opacity: 0 }
+        }
+        /* Plate badge only visible on hover or when marker is selected */
+        .fleet-marker .fleet-plate {
+          opacity: 0;
+          transform: translateY(-2px) scale(0.94);
+          transition: opacity .15s ease, transform .15s ease;
+          pointer-events: none;
+          order: -1;
+        }
+        .fleet-marker:hover .fleet-plate,
+        .fleet-marker.is-selected .fleet-plate {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+        .fleet-marker:hover .fleet-body,
+        .fleet-marker.is-selected .fleet-body {
+          transform: scale(1.08);
         }
       `}</style>
 
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <h1 className="page-title">Mapa ao vivo</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {enriched.length} veículo{enriched.length === 1 ? "" : "s"} ativos
-            {enriched.length > 0 && <span className="ml-2 inline-flex items-center gap-1 text-success">
+          <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+            Posições em tempo real
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success">
               <span className="relative inline-flex h-1.5 w-1.5">
                 <span className="absolute inset-0 rounded-full bg-success" />
                 <span className="absolute inset-0 rounded-full bg-success/60 animate-ping" />
               </span>
               ao vivo
-            </span>}
+            </span>
           </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {(Object.keys(STATUS_META) as Status[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(statusFilter === s ? "all" : s)}
-              className={cn(
-                "flex h-8 items-center gap-1.5 rounded-full border bg-card px-3 transition-colors",
-                statusFilter === s ? "border-primary bg-primary/10" : "border-border hover:bg-accent",
-              )}
-            >
-              <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS_META[s].color }} />
-              <span className="font-medium">{STATUS_META[s].label}</span>
-              <span className="text-muted-foreground">· {counts[s]}</span>
-            </button>
-          ))}
         </div>
       </header>
 
+      {/* Hero stats strip */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <StatTile
+          label="Total ativos"
+          value={enriched.length}
+          icon={Truck}
+          accent="primary"
+          active={statusFilter === "all"}
+          onClick={() => setStatusFilter("all")}
+        />
+        {(Object.keys(STATUS_META) as Status[]).map((s) => (
+          <StatTile
+            key={s}
+            label={STATUS_META[s].label}
+            value={counts[s]}
+            color={STATUS_META[s].color}
+            ring={STATUS_META[s].ring}
+            active={statusFilter === s}
+            onClick={() => setStatusFilter(statusFilter === s ? "all" : s)}
+          />
+        ))}
+      </div>
+
       {tokenError ? (
-        <div className="surface p-8 text-center">
-          <AlertCircle className="mx-auto h-10 w-10 text-destructive" />
-          <p className="mt-3 text-sm">Token do Mapbox não configurado.</p>
+        <div className="surface flex flex-col items-center gap-3 p-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+            <AlertCircle className="h-7 w-7" />
+          </div>
+          <div>
+            <p className="font-semibold">Token do Mapbox não configurado</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Defina <code className="rounded bg-muted px-1.5 py-0.5 text-xs">MAPBOX_PUBLIC_TOKEN</code> em <code className="rounded bg-muted px-1.5 py-0.5 text-xs">.env</code> e reinicie o servidor.
+            </p>
+          </div>
         </div>
       ) : (
         <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
           {/* Map */}
-          <div className="surface relative overflow-hidden" style={{ height: "min(72vh,720px)" }}>
+          <div
+            className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-[0_10px_40px_-12px_rgba(0,0,0,0.18),0_1px_2px_rgba(0,0,0,0.06)]"
+            style={{ height: "min(78vh,780px)" }}
+          >
             <div ref={containerRef} className="h-full w-full" />
 
             {/* Empty overlay */}
             {enriched.length === 0 && (
-              <div className="glass-bar pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full px-4 py-2 text-sm text-muted-foreground shadow-lg">
-                <MapPin className="h-4 w-4" /> Nenhum veículo em viagem
+              <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-card/95 shadow-[0_8px_24px_-6px_rgba(0,0,0,.25)] ring-1 ring-border">
+                  <Activity className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <div className="glass-bar rounded-full px-4 py-2 text-sm text-foreground/80 shadow-lg">
+                  <MapPin className="mr-1.5 inline h-4 w-4" />
+                  Nenhum veículo em viagem agora
+                </div>
               </div>
             )}
 
-            {/* Style switcher */}
-            <div className="glass-bar absolute left-3 top-3 flex items-center gap-1 rounded-full p-1 text-xs">
-              {(Object.keys(MAP_STYLES) as (keyof typeof MAP_STYLES)[]).map((k) => (
-                <button
-                  key={k}
-                  onClick={() => setStyleKey(k)}
-                  className={cn(
-                    "rounded-full px-2.5 py-1 transition-colors",
-                    styleKey === k ? "bg-primary text-primary-foreground" : "text-foreground/70 hover:bg-accent",
-                  )}
-                >
-                  {MAP_STYLES[k].label}
-                </button>
-              ))}
+            {/* Top-left: style picker (compact dropdown) */}
+            <div className="absolute left-3 top-3 z-10">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="glass-bar inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-medium text-foreground/90 shadow-md hover:bg-card"
+                    aria-label="Estilo do mapa"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                    {MAP_STYLES[styleKey].label}
+                    <ChevronDownSmall />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-40">
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground">Estilo</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={styleKey} onValueChange={(v) => setStyleKey(v as keyof typeof MAP_STYLES)}>
+                    {(Object.keys(MAP_STYLES) as (keyof typeof MAP_STYLES)[]).map((k) => (
+                      <DropdownMenuRadioItem key={k} value={k}>{MAP_STYLES[k].label}</DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+
+            {/* Top-right: action stack — fit all + sidebar toggle (mobile) */}
+            <div className="absolute right-3 top-3 z-10 flex flex-col gap-2">
+              <button
+                onClick={fitAll}
+                disabled={enriched.length === 0}
+                className="glass-bar inline-flex h-9 w-9 items-center justify-center rounded-xl text-foreground/90 shadow-md transition-colors hover:bg-card disabled:opacity-40"
+                aria-label="Recentralizar todos os veículos"
+                title="Recentralizar todos"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setSidebarOpen((v) => !v)}
+                className="glass-bar inline-flex h-9 w-9 items-center justify-center rounded-xl text-foreground/90 shadow-md transition-colors hover:bg-card lg:hidden"
+                aria-label={sidebarOpen ? "Ocultar lista" : "Mostrar lista"}
+                title={sidebarOpen ? "Ocultar lista" : "Mostrar lista"}
+              >
+                {sidebarOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              </button>
+            </div>
+
+            {/* Bottom-left: compact legend (only the statuses that have a count > 0) */}
+            {enriched.length > 0 && (
+              <div className="glass-bar absolute bottom-3 left-3 z-10 flex flex-wrap items-center gap-1.5 rounded-full px-2 py-1.5 text-[11px] shadow-md">
+                {(Object.keys(STATUS_META) as Status[])
+                  .filter((s) => counts[s] > 0)
+                  .map((s) => (
+                    <span key={s} className="inline-flex items-center gap-1 px-1.5">
+                      <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS_META[s].color }} />
+                      <span className="font-medium text-foreground/85">{STATUS_META[s].label}</span>
+                      <span className="text-muted-foreground tabular-nums">· {counts[s]}</span>
+                    </span>
+                  ))}
+              </div>
+            )}
 
             {/* Selected vehicle floating card */}
             {selectedPoint && (
@@ -564,15 +677,6 @@ function LiveMap() {
               </div>
             )}
 
-            {/* Sidebar toggle (lg-) */}
-            <button
-              onClick={() => setSidebarOpen((v) => !v)}
-              className="glass-bar absolute right-3 top-16 inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium lg:hidden"
-              aria-label="Alternar lista"
-            >
-              {sidebarOpen ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
-              {sidebarOpen ? "Ocultar" : "Veículos"}
-            </button>
           </div>
 
           {/* Sidebar */}
@@ -811,6 +915,55 @@ function Stat({ icon: Icon, label, value }: { icon: any; label: string; value: s
       </p>
       <p className="mt-0.5 text-xs font-semibold tabular-nums">{value}</p>
     </div>
+  );
+}
+
+/** Hero stat tile for the top strip. */
+function StatTile({
+  label, value, icon: Icon, color, ring, accent, active, onClick,
+}: {
+  label: string;
+  value: number;
+  icon?: any;
+  color?: string;
+  ring?: string;
+  accent?: "primary";
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const isPrimary = accent === "primary";
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "group relative flex items-center gap-2.5 overflow-hidden rounded-xl border bg-card px-3 py-2.5 text-left transition-all",
+        active
+          ? "border-primary/40 bg-primary/[0.04] shadow-[0_4px_14px_-6px_rgba(22,163,74,.25)]"
+          : "border-border hover:border-foreground/15 hover:bg-accent/40",
+      )}
+    >
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white shadow-inner"
+        style={{
+          background: isPrimary ? "var(--color-primary)" : color ?? "var(--color-muted-foreground)",
+          boxShadow: ring ? `inset 0 0 0 2px ${ring}` : undefined,
+        }}
+      >
+        {Icon ? <Icon className="h-4 w-4" /> : <span className="h-2 w-2 rounded-full bg-white/85" />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+        <p className="font-display text-2xl leading-none tracking-tight tabular-nums">{value}</p>
+      </div>
+    </button>
+  );
+}
+
+function ChevronDownSmall() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="text-current opacity-60">
+      <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

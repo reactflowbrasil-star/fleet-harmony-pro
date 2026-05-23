@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -13,7 +13,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Pencil, Plus, Search, Trash2, User as UserIcon } from "lucide-react";
+import { Pencil, Plus, Search, Trash2, User as UserIcon, KeyRound, ShieldCheck, ShieldOff, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/drivers")({
@@ -42,6 +43,7 @@ type Driver = {
   cnh_category: string | null;
   cnh_expiry: string | null;
   vehicle_id: string | null;
+  user_id: string | null;
   status: DriverStatus;
   vehicle?: { plate: string; model: string } | null;
 };
@@ -51,6 +53,7 @@ function DriversPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Driver | null>(null);
+  const [passwordFor, setPasswordFor] = useState<Driver | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DriverStatus | "all">("all");
 
@@ -346,13 +349,28 @@ function DriversPage() {
                   <dd className="truncate font-medium text-foreground">{d.vehicle?.plate ? `${d.vehicle.plate} · ${d.vehicle.model}` : "—"}</dd>
                 </div>
               </dl>
-              <div className="mt-4 flex items-center justify-end gap-1 border-t border-border/60 pt-3">
-                <button onClick={() => openEdit(d)} className="tap rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" aria-label="Editar">
-                  <Pencil className="h-4 w-4" />
+              <div className="mt-4 flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+                <button
+                  onClick={() => setPasswordFor(d)}
+                  className={cn(
+                    "inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold transition-colors",
+                    d.user_id
+                      ? "border-success/30 bg-success/10 text-success hover:bg-success/15"
+                      : "border-warning/30 bg-warning/10 text-warning hover:bg-warning/15",
+                  )}
+                  title={d.user_id ? "Acesso já criado — clique para redefinir senha" : "Sem acesso ao app — clique para criar"}
+                >
+                  {d.user_id ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldOff className="h-3.5 w-3.5" />}
+                  {d.user_id ? "Redefinir senha" : "Definir senha"}
                 </button>
-                <button onClick={() => { if (confirm(`Excluir ${d.full_name}?`)) remove.mutate(d.id); }} className="tap rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive" aria-label="Excluir">
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => openEdit(d)} className="tap rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" aria-label="Editar">
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => { if (confirm(`Excluir ${d.full_name}?`)) remove.mutate(d.id); }} className="tap rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive" aria-label="Excluir">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </article>
           );
@@ -366,6 +384,186 @@ function DriversPage() {
           </div>
         )}
       </div>
+
+      <PasswordDialog
+        driver={passwordFor}
+        onOpenChange={(o) => { if (!o) setPasswordFor(null); }}
+        onSaved={() => qc.invalidateQueries({ queryKey: ["drivers"] })}
+      />
     </div>
+  );
+}
+
+/* ============================================================
+ * PasswordDialog — dedicated UI for setting/resetting a driver's login
+ * ========================================================== */
+
+function PasswordDialog({
+  driver, onOpenChange, onSaved,
+}: {
+  driver: Driver | null;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (driver) {
+      setEmail(driver.email ?? "");
+      setPassword("");
+      setConfirm("");
+    }
+  }, [driver?.id, driver?.email]);
+
+  if (!driver) return null;
+  const hasAccess = !!driver.user_id;
+
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!driver) return;
+    const em = email.trim().toLowerCase();
+    if (!em) return toast.error("Informe o e-mail de login");
+    if (password.length < 6) return toast.error("Senha precisa ter no mínimo 6 caracteres");
+    if (password !== confirm) return toast.error("As senhas não conferem");
+
+    setSaving(true);
+    try {
+      // Try Edge Function first
+      let edgeOk = false;
+      let edgeErrMsg: string | null = null;
+      try {
+        const { data: fnData, error: fnErr } = await supabase.functions.invoke("create-driver-user", {
+          body: { driver_id: driver.id, email: em, password },
+        });
+        if (fnErr) throw fnErr;
+        if ((fnData as any)?.ok) edgeOk = true;
+        else if ((fnData as any)?.error) throw new Error((fnData as any).error);
+      } catch (err: any) {
+        edgeErrMsg = err?.message || "Falha ao criar acesso";
+      }
+
+      if (edgeOk) {
+        toast.success(hasAccess ? "Senha redefinida" : "Acesso criado");
+        onSaved();
+        onOpenChange(false);
+        return;
+      }
+
+      // Fallback: client-side signUp
+      const looksMissing = !!edgeErrMsg && /not found|404|FunctionsHttpError|Failed to send/i.test(edgeErrMsg);
+      try {
+        const { clientSideCreateDriverAuth } = await import("@/lib/driver-signup");
+        const { needsEmailConfirmation } = await clientSideCreateDriverAuth({
+          driverId: driver.id,
+          email: em,
+          password,
+          fullName: driver.full_name,
+        });
+        if (needsEmailConfirmation) {
+          toast.warning(
+            "Acesso criado. ⚠️ É necessário confirmar o e-mail antes de logar. Desative 'Confirm email' em Supabase → Authentication → Providers → Email.",
+            { duration: 12000 },
+          );
+        } else {
+          toast.success("Acesso criado e pronto para login");
+        }
+        onSaved();
+        onOpenChange(false);
+      } catch (signupErr: any) {
+        const sMsg = signupErr?.message || "Falha no cadastro";
+        if (/already registered|already exists|duplicate/i.test(sMsg)) {
+          toast.error(
+            "Esse e-mail já tem conta no Supabase Auth. Para redefinir a senha de uma conta existente é necessário deployar a Edge Function 'create-driver-user'.",
+            { duration: 12000 },
+          );
+        } else if (looksMissing) {
+          toast.error(
+            `Não foi possível criar acesso. Deploy a Edge Function (docs/setup-driver-auth.md). Erro: ${sMsg}`,
+            { duration: 10000 },
+          );
+        } else {
+          toast.error(`Falha: ${sMsg}`, { duration: 8000 });
+        }
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!driver} onOpenChange={(o) => !saving && onOpenChange(o)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-primary" />
+            {hasAccess ? "Redefinir senha de acesso" : "Definir senha de acesso"}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="mb-3 flex items-center gap-3 rounded-lg border border-border bg-muted/40 p-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <UserIcon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{driver.full_name}</p>
+            <p className={cn(
+              "truncate text-[11px] font-medium",
+              hasAccess ? "text-success" : "text-warning",
+            )}>
+              {hasAccess ? "✓ Conta ativa — alterar senha atual" : "⚠ Sem conta no app — criando novo acesso"}
+            </p>
+          </div>
+        </div>
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <Label>E-mail de login *</Label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="off"
+              required
+              className="h-11"
+              placeholder="motorista@empresa.com"
+            />
+          </div>
+          <div>
+            <Label>Nova senha *</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={6}
+              maxLength={72}
+              autoComplete="new-password"
+              required
+              className="h-11"
+              placeholder="Mínimo 6 caracteres"
+            />
+          </div>
+          <div>
+            <Label>Confirmar senha *</Label>
+            <Input
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              minLength={6}
+              maxLength={72}
+              required
+              className="h-11"
+              placeholder="Repita a senha"
+            />
+          </div>
+          <Button type="submit" disabled={saving} className="h-11 w-full">
+            {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando…</> : <><KeyRound className="mr-2 h-4 w-4" /> {hasAccess ? "Salvar nova senha" : "Criar acesso"}</>}
+          </Button>
+          <p className="text-center text-[11px] text-muted-foreground">
+            O motorista usa este e-mail e senha em /auth para entrar no app.
+          </p>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
