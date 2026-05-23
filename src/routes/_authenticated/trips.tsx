@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -28,6 +28,7 @@ const statusClasses: Record<TripStatus, string> = {
 };
 
 function TripsPage() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TripStatus | "all">("all");
 
@@ -109,7 +110,11 @@ function TripsPage() {
         {!isLoading && filtered.map((t: any) => {
           const km = (t.start_km != null && t.end_km != null) ? Math.max(0, Number(t.end_km) - Number(t.start_km)) : null;
           return (
-            <article key={t.id} className="surface p-4">
+            <article
+              key={t.id}
+              onClick={() => navigate({ to: `/trips/${t.id}` })}
+              className="surface cursor-pointer p-4 transition-colors hover:border-primary/30"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate font-medium">{t.driver?.full_name ?? "—"}</p>
@@ -172,7 +177,11 @@ function TripsPage() {
             {!isLoading && filtered.map((t: any) => {
               const km = (t.start_km != null && t.end_km != null) ? Math.max(0, Number(t.end_km) - Number(t.start_km)) : null;
               return (
-                <tr key={t.id} className="border-t border-border transition-colors hover:bg-muted/20">
+                <tr
+                  key={t.id}
+                  onClick={() => navigate({ to: `/trips/${t.id}` })}
+                  className="cursor-pointer border-t border-border transition-colors hover:bg-muted/20"
+                >
                   <td className="px-4 py-3 font-medium">{t.driver?.full_name ?? "—"}</td>
                   <td className="px-4 py-3">{t.vehicle?.plate ?? "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{t.origin || "—"} → {t.destination || "—"}</td>
