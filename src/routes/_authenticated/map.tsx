@@ -242,9 +242,56 @@ function LiveMap() {
     });
   }, [styleKey]);
 
-  /* ---------- load trips + latest gps ---------- */
+  /* ---------- load trips + latest gps ----------
+   * Tries 2 queries via the optimized current_vehicle_positions table (1 query)
+   * Falls back to the N+1 pattern if the table doesn't exist yet (migration
+   * 20260524000000_realtime_tracking.sql not applied).
+   */
   useEffect(() => {
-    async function load() {
+    async function loadFast(): Promise<boolean> {
+      // 1 SQL query for trips, 1 for positions — no N+1.
+      const { data: trips, error: tErr } = await supabase
+        .from("trips")
+        .select("id, vehicle_id, vehicle:vehicles(plate, model), driver:drivers(full_name, phone)")
+        .in("status", ["in_progress", "assigned", "viewed", "scheduled", "paused"] as any);
+      if (tErr || !trips) return false;
+      if (trips.length === 0) { setPoints([]); return true; }
+
+      const tripIds = trips.map((t: any) => t.id);
+      const { data: positions, error: pErr } = await (supabase as any)
+        .from("current_vehicle_positions")
+        .select("trip_id, lat, lng, speed, heading, accuracy, last_update")
+        .in("trip_id", tripIds);
+      if (pErr) return false; // table missing → fall back
+
+      const byTrip = new Map<string, any>();
+      (positions ?? []).forEach((p: any) => byTrip.set(p.trip_id, p));
+
+      const results: LivePoint[] = [];
+      for (const t of trips as any[]) {
+        const p = byTrip.get(t.id);
+        if (!p) continue;
+        results.push({
+          trip_id: t.id,
+          vehicle_id: t.vehicle_id,
+          lat: p.lat,
+          lng: p.lng,
+          speed: p.speed,
+          heading: p.heading,
+          accuracy: p.accuracy,
+          recorded_at: p.last_update,
+          vehicle_plate: t.vehicle?.plate,
+          vehicle_model: t.vehicle?.model,
+          driver_name: t.driver?.full_name,
+          driver_phone: t.driver?.phone,
+        });
+      }
+      setPoints(results);
+      return true;
+    }
+
+    async function loadFallback() {
+      // Legacy path (N+1) for when current_vehicle_positions doesn't exist yet.
       const { data: trips } = await supabase
         .from("trips")
         .select("id, vehicle_id, vehicle:vehicles(plate, model), driver:drivers(full_name, phone)")
@@ -277,36 +324,43 @@ function LiveMap() {
       }));
       setPoints(results.filter(Boolean) as LivePoint[]);
     }
+
+    async function load() {
+      const ok = await loadFast();
+      if (!ok) await loadFallback();
+    }
     load();
 
-    // Real-time: when a gps_points INSERT arrives we patch the matching point
-    // in state directly (no roundtrip). For brand-new trip_ids we trigger a
-    // full load so the marker is created with proper plate/driver labels.
+    // Real-time: prefer current_vehicle_positions UPDATE events (one per
+    // vehicle, fired by the DB trigger) over raw gps_points INSERTs.
+    // Falls back to gps_points if the optimized table isn't subscribed.
+    function applyRow(row: any) {
+      if (!row?.trip_id) return;
+      setPoints((prev) => {
+        const idx = prev.findIndex((p) => p.trip_id === row.trip_id);
+        if (idx === -1) {
+          load(); // unknown trip — full reload to fetch plate/driver
+          return prev;
+        }
+        const next = prev.slice();
+        next[idx] = {
+          ...next[idx],
+          lat: row.lat,
+          lng: row.lng,
+          speed: row.speed,
+          heading: row.heading,
+          accuracy: row.accuracy,
+          recorded_at: row.last_update ?? row.recorded_at,
+        };
+        return next;
+      });
+    }
+
     const ch = supabase
       .channel("gps-live-map")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "gps_points" }, (payload) => {
-        const row: any = payload.new;
-        if (!row?.trip_id) return;
-        setPoints((prev) => {
-          const idx = prev.findIndex((p) => p.trip_id === row.trip_id);
-          if (idx === -1) {
-            // unknown trip — full reload to fetch plate/driver
-            load();
-            return prev;
-          }
-          const next = prev.slice();
-          next[idx] = {
-            ...next[idx],
-            lat: row.lat,
-            lng: row.lng,
-            speed: row.speed,
-            heading: row.heading,
-            accuracy: row.accuracy,
-            recorded_at: row.recorded_at,
-          };
-          return next;
-        });
-      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "current_vehicle_positions" }, (p) => applyRow(p.new))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "current_vehicle_positions" }, (p) => applyRow(p.new))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "gps_points" }, (p) => applyRow(p.new))
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "trips" }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };

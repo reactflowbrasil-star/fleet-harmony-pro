@@ -65,7 +65,8 @@ function GeofencesPage() {
       if (error) throw error;
       return data ?? [];
     },
-    refetchInterval: 30_000,
+    // No refetchInterval — Realtime subscription below invalidates the query
+    // on every INSERT, so polling would just duplicate work.
   });
 
   // subscribe to live events
