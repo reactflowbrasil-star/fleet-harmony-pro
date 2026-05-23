@@ -1,25 +1,60 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, User as UserIcon } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Pencil, Plus, Search, Trash2, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/drivers")({
   component: DriversPage,
 });
 
+type DriverStatus = "active" | "inactive" | "suspended";
+const statusLabel: Record<DriverStatus, string> = {
+  active: "Ativo",
+  inactive: "Inativo",
+  suspended: "Suspenso",
+};
+const statusClasses: Record<DriverStatus, string> = {
+  active: "bg-success/15 text-success",
+  inactive: "bg-muted text-muted-foreground",
+  suspended: "bg-destructive/15 text-destructive",
+};
+
+type Driver = {
+  id: string;
+  full_name: string;
+  cpf: string | null;
+  phone: string | null;
+  email: string | null;
+  cnh: string | null;
+  cnh_category: string | null;
+  cnh_expiry: string | null;
+  vehicle_id: string | null;
+  status: DriverStatus;
+  vehicle?: { plate: string; model: string } | null;
+};
+
 function DriversPage() {
   const { companyId } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Driver | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<DriverStatus | "all">("all");
 
-  const { data: drivers } = useQuery({
+  const { data: drivers, isLoading } = useQuery({
     queryKey: ["drivers"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -27,7 +62,7 @@ function DriversPage() {
         .select("*, vehicle:vehicles(plate, model)")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data;
+      return data as Driver[];
     },
   });
 
@@ -39,13 +74,40 @@ function DriversPage() {
     },
   });
 
+  const filtered = useMemo(() => {
+    if (!drivers) return [];
+    const q = search.trim().toLowerCase();
+    return drivers.filter((d) => {
+      if (statusFilter !== "all" && d.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        d.full_name.toLowerCase().includes(q) ||
+        (d.cpf ?? "").toLowerCase().includes(q) ||
+        (d.email ?? "").toLowerCase().includes(q) ||
+        (d.cnh ?? "").toLowerCase().includes(q) ||
+        (d.vehicle?.plate ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [drivers, search, statusFilter]);
+
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("drivers").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["drivers"] });
+      toast.success("Motorista excluído");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!companyId) return;
     const fd = new FormData(e.currentTarget);
     const vehicleId = String(fd.get("vehicle_id") || "");
-    const { error } = await supabase.from("drivers").insert({
-      company_id: companyId,
+    const payload = {
       full_name: String(fd.get("full_name") || "").trim(),
       cpf: String(fd.get("cpf") || "").trim() || null,
       phone: String(fd.get("phone") || "").trim() || null,
@@ -54,72 +116,161 @@ function DriversPage() {
       cnh_category: String(fd.get("cnh_category") || "").trim() || null,
       cnh_expiry: (fd.get("cnh_expiry") as string) || null,
       vehicle_id: vehicleId || null,
-    });
+      status: (String(fd.get("status") || "active") as DriverStatus),
+    };
+    let error: any;
+    if (editing) {
+      ({ error } = await supabase.from("drivers").update(payload).eq("id", editing.id));
+    } else {
+      ({ error } = await supabase.from("drivers").insert({ company_id: companyId, ...payload }));
+    }
     if (error) return toast.error(error.message);
-    toast.success("Motorista cadastrado!");
+    toast.success(editing ? "Motorista atualizado" : "Motorista cadastrado");
     setOpen(false);
+    setEditing(null);
     qc.invalidateQueries({ queryKey: ["drivers"] });
   }
 
+  function openCreate() { setEditing(null); setOpen(true); }
+  function openEdit(d: Driver) { setEditing(d); setOpen(true); }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const soonStr = (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10); })();
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-4xl">Motoristas</h1>
-          <p className="text-sm text-muted-foreground">{drivers?.length ?? 0} motoristas</p>
+    <div className="space-y-5 sm:space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="page-title">Motoristas</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {drivers?.length ?? 0} motorista{drivers?.length === 1 ? "" : "s"}
+          </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setEditing(null); }}>
           <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4 mr-2" />Novo motorista</Button>
+            <Button onClick={openCreate} className="h-10 shrink-0"><Plus className="mr-2 h-4 w-4" />Novo motorista</Button>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Cadastrar motorista</DialogTitle></DialogHeader>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{editing ? "Editar motorista" : "Cadastrar motorista"}</DialogTitle>
+            </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div><Label>Nome completo</Label><Input name="full_name" required maxLength={100} /></div>
+              <div><Label>Nome completo *</Label><Input name="full_name" required maxLength={100} defaultValue={editing?.full_name} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>CPF</Label><Input name="cpf" maxLength={20} /></div>
-                <div><Label>Telefone</Label><Input name="phone" maxLength={20} /></div>
-                <div className="col-span-2"><Label>E-mail</Label><Input name="email" type="email" maxLength={255} /></div>
-                <div><Label>CNH</Label><Input name="cnh" maxLength={20} /></div>
-                <div><Label>Categoria</Label><Input name="cnh_category" maxLength={5} placeholder="B, C, D, E" /></div>
-                <div className="col-span-2"><Label>Validade CNH</Label><Input name="cnh_expiry" type="date" /></div>
-                <div className="col-span-2">
+                <div><Label>CPF</Label><Input name="cpf" maxLength={20} defaultValue={editing?.cpf ?? ""} /></div>
+                <div><Label>Telefone</Label><Input name="phone" maxLength={20} defaultValue={editing?.phone ?? ""} /></div>
+                <div className="col-span-2"><Label>E-mail</Label><Input name="email" type="email" maxLength={255} defaultValue={editing?.email ?? ""} /></div>
+                <div><Label>CNH</Label><Input name="cnh" maxLength={20} defaultValue={editing?.cnh ?? ""} /></div>
+                <div><Label>Categoria</Label><Input name="cnh_category" maxLength={5} placeholder="B, C, D, E" defaultValue={editing?.cnh_category ?? ""} /></div>
+                <div className="col-span-2"><Label>Validade CNH</Label><Input name="cnh_expiry" type="date" defaultValue={editing?.cnh_expiry ?? ""} /></div>
+                <div>
+                  <Label>Status</Label>
+                  <select name="status" defaultValue={editing?.status ?? "active"} className="nice-select mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    {(Object.keys(statusLabel) as DriverStatus[]).map((s) => (
+                      <option key={s} value={s}>{statusLabel[s]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <Label>Veículo vinculado</Label>
-                  <select name="vehicle_id" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <select name="vehicle_id" defaultValue={editing?.vehicle_id ?? ""} className="nice-select mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
                     <option value="">— sem vínculo —</option>
                     {vehicles?.map((v) => <option key={v.id} value={v.id}>{v.plate} · {v.model}</option>)}
                   </select>
                 </div>
               </div>
-              <Button type="submit" className="w-full">Cadastrar</Button>
+              <Button type="submit" className="h-11 w-full">{editing ? "Salvar alterações" : "Cadastrar"}</Button>
             </form>
           </DialogContent>
         </Dialog>
+      </header>
+
+      <div className="glass-bar sticky top-14 z-20 -mx-4 flex flex-col gap-2 border-y border-border px-4 py-2.5 sm:flex-row sm:items-center sm:gap-3 md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="Buscar por nome, CPF, CNH, e-mail, placa…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-10 pl-9" />
+        </div>
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as DriverStatus | "all")}>
+          <SelectTrigger className="h-10 sm:w-[180px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os status</SelectItem>
+            {(Object.keys(statusLabel) as DriverStatus[]).map((s) => (
+              <SelectItem key={s} value={s}>{statusLabel[s]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {drivers?.map((d) => (
-          <div key={d.id} className="rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+      <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+        {isLoading && Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="surface p-4 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <UserIcon className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-semibold">{d.full_name}</h3>
-                <p className="text-xs text-muted-foreground">{d.email || d.phone || "—"}</p>
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="flex-1">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="mt-2 h-3 w-40" />
               </div>
             </div>
-            <div className="mt-4 space-y-1 text-xs text-muted-foreground">
-              <p>CNH: {d.cnh || "—"} {d.cnh_category && `(${d.cnh_category})`}</p>
-              {d.cnh_expiry && <p>Validade: {new Date(d.cnh_expiry).toLocaleDateString("pt-BR")}</p>}
-              <p>Veículo: {(d as any).vehicle?.plate ? `${(d as any).vehicle.plate} · ${(d as any).vehicle.model}` : "—"}</p>
-            </div>
+            <Skeleton className="mt-4 h-3 w-full" />
+            <Skeleton className="mt-2 h-3 w-3/4" />
           </div>
         ))}
-        {drivers && drivers.length === 0 && (
-          <div className="col-span-full rounded-2xl border border-dashed border-border bg-card p-12 text-center">
+        {!isLoading && filtered.map((d) => {
+          const expired = d.cnh_expiry && d.cnh_expiry < todayStr;
+          const expiringSoon = d.cnh_expiry && d.cnh_expiry >= todayStr && d.cnh_expiry <= soonStr;
+          return (
+            <article key={d.id} className="surface p-4 transition-all hover:border-primary/30 hover:shadow-[var(--shadow-pop)] sm:p-5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <UserIcon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold leading-tight">{d.full_name}</h3>
+                    <p className="truncate text-xs text-muted-foreground">{d.email || d.phone || "—"}</p>
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusClasses[d.status]}`}>
+                  {statusLabel[d.status]}
+                </span>
+              </div>
+              <dl className="mt-4 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">CNH</dt>
+                  <dd className="truncate font-medium text-foreground">{d.cnh || "—"} {d.cnh_category && <span className="text-muted-foreground">({d.cnh_category})</span>}</dd>
+                </div>
+                {d.cnh_expiry && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted-foreground">Validade</dt>
+                    <dd className={`truncate font-medium ${expired ? "text-destructive" : expiringSoon ? "text-warning" : "text-foreground"}`}>
+                      {new Date(d.cnh_expiry).toLocaleDateString("pt-BR")}
+                      {expired && " · vencida"}
+                      {expiringSoon && " · em breve"}
+                    </dd>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">Veículo</dt>
+                  <dd className="truncate font-medium text-foreground">{d.vehicle?.plate ? `${d.vehicle.plate} · ${d.vehicle.model}` : "—"}</dd>
+                </div>
+              </dl>
+              <div className="mt-4 flex items-center justify-end gap-1 border-t border-border/60 pt-3">
+                <button onClick={() => openEdit(d)} className="tap rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" aria-label="Editar">
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button onClick={() => { if (confirm(`Excluir ${d.full_name}?`)) remove.mutate(d.id); }} className="tap rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive" aria-label="Excluir">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </article>
+          );
+        })}
+        {!isLoading && filtered.length === 0 && (
+          <div className="col-span-full rounded-2xl border border-dashed border-border bg-card p-10 text-center sm:p-12">
             <UserIcon className="mx-auto h-10 w-10 text-muted-foreground" />
-            <p className="mt-3 text-sm text-muted-foreground">Nenhum motorista cadastrado.</p>
+            <p className="mt-3 text-sm text-muted-foreground">
+              {drivers?.length ? "Nenhum motorista corresponde aos filtros." : "Nenhum motorista cadastrado."}
+            </p>
           </div>
         )}
       </div>

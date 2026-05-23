@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npm run *)",
+      "Read(//c/Users/REACTF~1/AppData/Local/Temp/claude/C--Users-ReactFlow-Documents-ALEXANDRE-VETFLOW-fleet-harmony-pro/75f88e18-ae19-44eb-ad4b-9d143c03da24/tasks/**)"
+    ]
+  }
+}

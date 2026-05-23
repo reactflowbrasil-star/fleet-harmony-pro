@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npm run dev 2>&1)",
+      "Bash(curl -s -o /tmp/landing.html -w \"HTTP %{http_code} · %{size_download} bytes · %{time_total}s\\\\n\" http://localhost:8081/)",
+      "Read(//tmp/**)"
+    ]
+  }
+}
