@@ -4,11 +4,23 @@ import mapboxgl from "mapbox-gl";
 import { useServerFn } from "@tanstack/react-start";
 import { getMapboxToken } from "@/lib/mapbox.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertCircle, MapPin, Truck } from "lucide-react";
+import {
+  AlertCircle, MapPin, Truck, Search, Crosshair, Layers, Pause, Play, X,
+  Gauge, Signal, Clock, ChevronLeft, ChevronRight, ArrowUpRight,
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/map")({
   component: LiveMap,
 });
+
+/* ============================================================
+ * Types
+ * ========================================================== */
 
 type Status = "moving" | "stopped" | "signal_weak" | "signal_lost" | "offline";
 
@@ -22,7 +34,9 @@ interface LivePoint {
   accuracy: number | null;
   recorded_at: string;
   vehicle_plate?: string;
+  vehicle_model?: string;
   driver_name?: string;
+  driver_phone?: string;
 }
 
 const STATUS_META: Record<Status, { label: string; color: string; ring: string }> = {
@@ -31,6 +45,13 @@ const STATUS_META: Record<Status, { label: string; color: string; ring: string }
   signal_weak: { label: "Sinal fraco",  color: "#f59e0b", ring: "#fde68a" },
   signal_lost: { label: "Sem sinal",    color: "#dc2626", ring: "#fecaca" },
   offline:     { label: "Offline",      color: "#6b7280", ring: "#e5e7eb" },
+};
+
+const MAP_STYLES: Record<string, { id: string; label: string }> = {
+  light:     { id: "mapbox://styles/mapbox/light-v11",     label: "Claro" },
+  streets:   { id: "mapbox://styles/mapbox/streets-v12",   label: "Ruas" },
+  satellite: { id: "mapbox://styles/mapbox/satellite-streets-v12", label: "Satélite" },
+  dark:      { id: "mapbox://styles/mapbox/dark-v11",      label: "Escuro" },
 };
 
 function deriveStatus(p: LivePoint, now: number): Status {
@@ -49,24 +70,134 @@ function relativeTime(iso: string, now: number) {
   return `há ${Math.round(s / 3600)}h`;
 }
 
+/** Tween a marker from its current lngLat to a new one over `durationMs`. */
+function animateMarkerTo(marker: mapboxgl.Marker, to: [number, number], durationMs = 900) {
+  const from = marker.getLngLat();
+  const start = [from.lng, from.lat] as [number, number];
+  const t0 = performance.now();
+  const ease = (t: number) => 1 - Math.pow(1 - t, 3); // ease-out cubic
+
+  function step(now: number) {
+    const p = Math.min(1, (now - t0) / durationMs);
+    const e = ease(p);
+    const lng = start[0] + (to[0] - start[0]) * e;
+    const lat = start[1] + (to[1] - start[1]) * e;
+    marker.setLngLat([lng, lat]);
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ============================================================
+ * Marker DOM (with heading rotation, status color, plate, pulse)
+ * ========================================================== */
+
+function buildMarkerEl(p: LivePoint, status: Status): {
+  root: HTMLDivElement;
+  arrow: HTMLDivElement;
+  pulse: HTMLSpanElement;
+  badge: HTMLDivElement;
+  body: HTMLDivElement;
+} {
+  const meta = STATUS_META[status];
+  const root = document.createElement("div");
+  root.style.cssText = `
+    position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;
+    cursor:pointer;font-family:Inter,sans-serif;will-change:transform;
+  `;
+
+  const badge = document.createElement("div");
+  badge.style.cssText = `
+    background:#fff;color:#111;font-weight:700;font-size:10px;letter-spacing:.4px;
+    padding:2px 6px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,.18);
+    border:1px solid rgba(0,0,0,.05);white-space:nowrap;line-height:1.1;
+    display:flex;align-items:center;gap:4px;transform:translateY(2px);
+  `;
+  badge.textContent = p.vehicle_plate ?? "—";
+  if (p.speed != null && (p.speed ?? 0) * 3.6 >= 1) {
+    const sp = document.createElement("span");
+    sp.style.cssText = "color:#6b7280;font-weight:600;";
+    sp.textContent = `· ${Math.round((p.speed ?? 0) * 3.6)} km/h`;
+    badge.appendChild(sp);
+  }
+
+  const body = document.createElement("div");
+  body.style.cssText = `
+    position:relative;width:34px;height:34px;border-radius:50%;
+    background:${meta.color};border:3px solid #fff;
+    box-shadow:0 0 0 4px ${meta.ring},0 6px 16px rgba(0,0,0,.28);
+    display:flex;align-items:center;justify-content:center;color:#fff;
+    font-size:14px;transition:background .3s ease,box-shadow .3s ease;
+  `;
+
+  const arrow = document.createElement("div");
+  arrow.style.cssText = `
+    position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;
+    pointer-events:none;transition:transform .8s cubic-bezier(.22,1,.36,1);
+    transform-origin:50% 50%;
+  `;
+  arrow.innerHTML = `
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+      <path d="M12 3l3 5h-2v6h-2V8H9l3-5z" fill="#fff" opacity=".95"/>
+    </svg>
+  `;
+
+  const truck = document.createElement("div");
+  truck.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;";
+  truck.textContent = "🚚";
+
+  const pulse = document.createElement("span");
+  pulse.style.cssText = `
+    position:absolute;inset:-8px;border-radius:50%;background:${meta.color};
+    opacity:${status === "moving" ? 0.55 : 0};animation:fleet-pulse 1.8s ease-out infinite;
+    pointer-events:none;
+  `;
+
+  body.append(pulse, truck, arrow);
+  root.append(body, badge);
+
+  return { root, arrow, pulse, badge, body };
+}
+
+/* ============================================================
+ * LiveMap component
+ * ========================================================== */
+
+interface MarkerEntry {
+  marker: mapboxgl.Marker;
+  el: ReturnType<typeof buildMarkerEl>;
+  popup: mapboxgl.Popup;
+  lastLngLat: [number, number];
+  trailIds: { source: string; layer: string };
+  trail: [number, number][];
+}
+
 function LiveMap() {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<Record<string, { marker: mapboxgl.Marker; el: HTMLDivElement; pulse: HTMLSpanElement }>>({});
-  const popupsRef = useRef<Record<string, mapboxgl.Popup>>({});
+  const markersRef = useRef<Record<string, MarkerEntry>>({});
   const fetchToken = useServerFn(getMapboxToken);
+
   const [tokenError, setTokenError] = useState(false);
   const [points, setPoints] = useState<LivePoint[]>([]);
   const [now, setNow] = useState(Date.now());
+  const [styleKey, setStyleKey] = useState<keyof typeof MAP_STYLES>("light");
 
-  // tick clock so statuses update without new data
+  // sidebar / filters
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [autoFollow, setAutoFollow] = useState(false);
+
+  /* ---------- ticking clock so statuses + "last seen" refresh ---------- */
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(id);
   }, []);
 
-  // init map
+  /* ---------- map init ---------- */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -75,28 +206,43 @@ function LiveMap() {
       if (!token) { setTokenError(true); return; }
       mapboxgl.accessToken = token;
       if (!containerRef.current || mapRef.current) return;
-      mapRef.current = new mapboxgl.Map({
+      const map = new mapboxgl.Map({
         container: containerRef.current,
-        style: "mapbox://styles/mapbox/light-v11",
+        style: MAP_STYLES[styleKey].id,
         center: [-46.6333, -23.5505],
         zoom: 10,
+        attributionControl: false,
       });
-      mapRef.current.addControl(new mapboxgl.NavigationControl(), "top-right");
-      mapRef.current.addControl(new mapboxgl.FullscreenControl(), "top-right");
+      map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
+      map.addControl(new mapboxgl.FullscreenControl(), "top-right");
+      map.addControl(new mapboxgl.AttributionControl({ compact: true }), "bottom-right");
+      mapRef.current = map;
     })();
     return () => { cancelled = true; mapRef.current?.remove(); mapRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchToken]);
 
-  // load active trips + latest gps for each
+  /* ---------- switch style ---------- */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.setStyle(MAP_STYLES[styleKey].id);
+    // After style swap, sources/layers we added (trails) are wiped — they'll be
+    // re-added on next render of points.
+    map.once("styledata", () => {
+      Object.values(markersRef.current).forEach((m) => { m.trailIds = { source: `trail-src-${m.marker.getElement().id || Math.random()}`, layer: `trail-layer-${m.marker.getElement().id || Math.random()}` }; });
+    });
+  }, [styleKey]);
+
+  /* ---------- load trips + latest gps ---------- */
   useEffect(() => {
     async function load() {
       const { data: trips } = await supabase
         .from("trips")
-        .select("id, vehicle_id, vehicle:vehicles(plate), driver:drivers(full_name)")
-        .eq("status", "in_progress");
+        .select("id, vehicle_id, vehicle:vehicles(plate, model), driver:drivers(full_name, phone)")
+        .in("status", ["in_progress", "assigned", "viewed", "scheduled", "paused"] as any);
       if (!trips || trips.length === 0) { setPoints([]); return; }
 
-      // batch latest point per trip
       const results = await Promise.all(trips.map(async (t: any) => {
         const { data: p } = await supabase
           .from("gps_points")
@@ -116,7 +262,9 @@ function LiveMap() {
           accuracy: p.accuracy,
           recorded_at: p.recorded_at,
           vehicle_plate: t.vehicle?.plate,
+          vehicle_model: t.vehicle?.model,
           driver_name: t.driver?.full_name,
+          driver_phone: t.driver?.phone,
         } as LivePoint;
       }));
       setPoints(results.filter(Boolean) as LivePoint[]);
@@ -124,127 +272,223 @@ function LiveMap() {
     load();
 
     const ch = supabase
-      .channel("gps-live")
+      .channel("gps-live-map")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "gps_points" }, () => load())
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "trips" }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
 
-  // update markers when points or clock changes
+  /* ---------- enriched points (with status) ---------- */
+  const enriched = useMemo(
+    () => points.map((p) => ({ ...p, status: deriveStatus(p, now) })),
+    [points, now],
+  );
+
+  /* ---------- filtered for sidebar ---------- */
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return enriched.filter((p) => {
+      if (statusFilter !== "all" && p.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        (p.vehicle_plate ?? "").toLowerCase().includes(q) ||
+        (p.driver_name ?? "").toLowerCase().includes(q) ||
+        (p.vehicle_model ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [enriched, search, statusFilter]);
+
+  /* ---------- update markers (animated, with trail and heading) ---------- */
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const seen = new Set<string>();
-    points.forEach((p) => {
+
+    enriched.forEach((p) => {
       seen.add(p.trip_id);
-      const lngLat: [number, number] = [p.lng, p.lat];
-      const st = deriveStatus(p, now);
-      const meta = STATUS_META[st];
-      const popupHtml = `
-        <div style="font-family:Inter,sans-serif;min-width:200px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <span style="display:inline-flex;height:8px;width:8px;border-radius:50%;background:${meta.color};box-shadow:0 0 0 3px ${meta.ring}"></span>
-            <strong style="font-size:14px">${p.vehicle_plate ?? "—"}</strong>
-            <span style="font-size:11px;color:#6b7280;margin-left:auto">${meta.label}</span>
-          </div>
-          <div style="font-size:12px;color:#374151">${p.driver_name ?? "—"}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-top:8px;font-size:12px">
-            <div><span style="color:#6b7280">Velocidade</span><br/><b>${p.speed != null ? Math.round(Number(p.speed) * 3.6) + " km/h" : "—"}</b></div>
-            <div><span style="color:#6b7280">Precisão</span><br/><b>${p.accuracy != null ? Math.round(Number(p.accuracy)) + " m" : "—"}</b></div>
-          </div>
-          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:11px;color:#6b7280">
-            ${relativeTime(p.recorded_at, now)} · ${new Date(p.recorded_at).toLocaleTimeString("pt-BR")}
-          </div>
-          <button data-trip="${p.trip_id}" style="margin-top:8px;width:100%;padding:6px 8px;border-radius:6px;background:oklch(0.32 0.08 160);color:#fff;border:0;font-size:12px;cursor:pointer">Ver detalhes da viagem</button>
-        </div>`;
-
+      const next: [number, number] = [p.lng, p.lat];
+      const meta = STATUS_META[p.status];
       const existing = markersRef.current[p.trip_id];
-      if (existing) {
-        existing.marker.setLngLat(lngLat);
-        // update color/ring for current status
-        existing.el.style.background = meta.color;
-        existing.el.style.boxShadow = `0 0 0 4px ${meta.ring}, 0 4px 12px rgba(0,0,0,.3)`;
-        existing.pulse.style.background = meta.color;
-        existing.pulse.style.opacity = st === "moving" ? "0.6" : "0";
-        // update popup html
-        const pop = popupsRef.current[p.trip_id];
-        if (pop) pop.setHTML(popupHtml);
-      } else {
-        const el = document.createElement("div");
-        el.style.cssText = `
-          position:relative;width:28px;height:28px;border-radius:50%;
-          background:${meta.color};border:2px solid #fff;
-          box-shadow:0 0 0 4px ${meta.ring}, 0 4px 12px rgba(0,0,0,.3);
-          display:flex;align-items:center;justify-content:center;color:#fff;
-          font-size:13px;cursor:pointer;
-        `;
-        el.textContent = "🚚";
-        const pulse = document.createElement("span");
-        pulse.style.cssText = `
-          position:absolute;inset:-6px;border-radius:50%;background:${meta.color};
-          opacity:${st === "moving" ? 0.6 : 0};animation:fleet-pulse 1.6s ease-out infinite;pointer-events:none;
-        `;
-        el.appendChild(pulse);
 
-        const popup = new mapboxgl.Popup({ offset: 18, closeButton: true }).setHTML(popupHtml);
-        const m = new mapboxgl.Marker(el).setLngLat(lngLat).setPopup(popup).addTo(map);
+      if (existing) {
+        // Animate movement
+        animateMarkerTo(existing.marker, next, 900);
+        // Update status visuals
+        existing.el.body.style.background = meta.color;
+        existing.el.body.style.boxShadow = `0 0 0 4px ${meta.ring},0 6px 16px rgba(0,0,0,.28)`;
+        existing.el.pulse.style.background = meta.color;
+        existing.el.pulse.style.opacity = p.status === "moving" ? "0.55" : "0";
+        // Update plate/speed badge
+        const speedKmh = p.speed != null ? Math.round((p.speed ?? 0) * 3.6) : null;
+        existing.el.badge.innerHTML = "";
+        existing.el.badge.appendChild(document.createTextNode(p.vehicle_plate ?? "—"));
+        if (speedKmh != null && speedKmh >= 1) {
+          const sp = document.createElement("span");
+          sp.style.cssText = "color:#6b7280;font-weight:600;margin-left:4px;";
+          sp.textContent = `· ${speedKmh} km/h`;
+          existing.el.badge.appendChild(sp);
+        }
+        // Rotate arrow to heading
+        if (p.heading != null) {
+          existing.el.arrow.style.transform = `rotate(${p.heading}deg)`;
+        }
+        // Update popup html
+        existing.popup.setHTML(renderPopupHtml(p, p.status, now));
+        // Append to trail (keep last 60 points, drop if duplicate)
+        const lastTrail = existing.trail.at(-1);
+        if (!lastTrail || lastTrail[0] !== next[0] || lastTrail[1] !== next[1]) {
+          existing.trail.push(next);
+          if (existing.trail.length > 60) existing.trail.splice(0, existing.trail.length - 60);
+          updateTrail(map, existing);
+        }
+        existing.lastLngLat = next;
+      } else {
+        // Create new marker
+        const el = buildMarkerEl(p, p.status);
+        if (p.heading != null) el.arrow.style.transform = `rotate(${p.heading}deg)`;
+        const popup = new mapboxgl.Popup({ offset: 38, closeButton: true, maxWidth: "260px" })
+          .setHTML(renderPopupHtml(p, p.status, now));
+        const marker = new mapboxgl.Marker({ element: el.root, anchor: "bottom" })
+          .setLngLat(next)
+          .setPopup(popup)
+          .addTo(map);
+
+        // wire popup "Ver detalhes" → trip detail
         popup.on("open", () => {
-          // wire up "Ver detalhes" button after popup is in DOM
           setTimeout(() => {
             const btn = document.querySelector(`button[data-trip="${p.trip_id}"]`);
             btn?.addEventListener("click", () => navigate({ to: `/trips/${p.trip_id}` }));
           }, 0);
         });
-        markersRef.current[p.trip_id] = { marker: m, el, pulse };
-        popupsRef.current[p.trip_id] = popup;
+
+        // Click on marker → select in sidebar
+        el.root.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          setSelectedTripId(p.trip_id);
+        });
+
+        const entry: MarkerEntry = {
+          marker,
+          el,
+          popup,
+          lastLngLat: next,
+          trailIds: {
+            source: `trail-src-${p.trip_id}`,
+            layer: `trail-layer-${p.trip_id}`,
+          },
+          trail: [next],
+        };
+        markersRef.current[p.trip_id] = entry;
+        // Load the last N gps points for an initial trail
+        seedTrail(p.trip_id, entry, map);
       }
     });
 
+    // Remove markers that are no longer present
     Object.keys(markersRef.current).forEach((id) => {
       if (!seen.has(id)) {
-        markersRef.current[id].marker.remove();
+        const m = markersRef.current[id];
+        m.marker.remove();
+        if (map.getLayer(m.trailIds.layer)) map.removeLayer(m.trailIds.layer);
+        if (map.getSource(m.trailIds.source)) map.removeSource(m.trailIds.source);
         delete markersRef.current[id];
-        delete popupsRef.current[id];
       }
     });
 
-    if (points.length === 1) {
-      map.flyTo({ center: [points[0].lng, points[0].lat], zoom: 14, duration: 800 });
-    } else if (points.length > 1) {
+    // Auto-fit only on first load or when nothing selected
+    if (enriched.length && !selectedTripId) {
       const bounds = new mapboxgl.LngLatBounds();
-      points.forEach((p) => bounds.extend([p.lng, p.lat]));
-      map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 600 });
+      enriched.forEach((p) => bounds.extend([p.lng, p.lat]));
+      // Only fit when no marker is currently focused
+      if (enriched.length === 1) {
+        map.easeTo({ center: [enriched[0].lng, enriched[0].lat], zoom: Math.max(map.getZoom(), 13), duration: 800 });
+      } else {
+        try { map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800 }); } catch { /* ignore */ }
+      }
     }
-  }, [points, now, navigate]);
+  }, [enriched, navigate, now, selectedTripId]);
 
+  /* ---------- follow selected vehicle ---------- */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !selectedTripId) return;
+    const entry = markersRef.current[selectedTripId];
+    const point = enriched.find((p) => p.trip_id === selectedTripId);
+    if (!entry || !point) return;
+    if (autoFollow) {
+      map.easeTo({ center: [point.lng, point.lat], duration: 800, zoom: Math.max(map.getZoom(), 14) });
+    }
+  }, [selectedTripId, enriched, autoFollow]);
+
+  function focusVehicle(tripId: string) {
+    const map = mapRef.current;
+    const entry = markersRef.current[tripId];
+    const point = enriched.find((p) => p.trip_id === tripId);
+    if (!map || !entry || !point) return;
+    setSelectedTripId(tripId);
+    map.flyTo({ center: [point.lng, point.lat], zoom: 15, duration: 900, essential: true });
+    entry.popup.addTo(map);
+  }
+
+  function clearSelection() {
+    setSelectedTripId(null);
+    setAutoFollow(false);
+    Object.values(markersRef.current).forEach((m) => m.popup.remove());
+  }
+
+  /* ---------- counts for legend ---------- */
   const counts = useMemo(() => {
     const c: Record<Status, number> = { moving: 0, stopped: 0, signal_weak: 0, signal_lost: 0, offline: 0 };
-    points.forEach((p) => { c[deriveStatus(p, now)]++; });
+    enriched.forEach((p) => { c[p.status]++; });
     return c;
-  }, [points, now]);
+  }, [enriched]);
 
+  const selectedPoint = selectedTripId
+    ? enriched.find((p) => p.trip_id === selectedTripId) ?? null
+    : null;
+
+  /* ---------- render ---------- */
   return (
     <div className="space-y-4">
-      <style>{`@keyframes fleet-pulse { 0% { transform: scale(1); opacity: .6 } 100% { transform: scale(2.4); opacity: 0 } }`}</style>
+      <style>{`
+        @keyframes fleet-pulse {
+          0% { transform: scale(1); opacity: .55 }
+          100% { transform: scale(2.6); opacity: 0 }
+        }
+      `}</style>
 
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="page-title">Mapa ao vivo</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {points.length} veículo{points.length === 1 ? "" : "s"} em rota
+            {enriched.length} veículo{enriched.length === 1 ? "" : "s"} ativos
+            {enriched.length > 0 && <span className="ml-2 inline-flex items-center gap-1 text-success">
+              <span className="relative inline-flex h-1.5 w-1.5">
+                <span className="absolute inset-0 rounded-full bg-success" />
+                <span className="absolute inset-0 rounded-full bg-success/60 animate-ping" />
+              </span>
+              ao vivo
+            </span>}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {(Object.keys(STATUS_META) as Status[]).map((s) => (
-            <div key={s} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5">
+            <button
+              key={s}
+              onClick={() => setStatusFilter(statusFilter === s ? "all" : s)}
+              className={cn(
+                "flex h-8 items-center gap-1.5 rounded-full border bg-card px-3 transition-colors",
+                statusFilter === s ? "border-primary bg-primary/10" : "border-border hover:bg-accent",
+              )}
+            >
               <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS_META[s].color }} />
               <span className="font-medium">{STATUS_META[s].label}</span>
               <span className="text-muted-foreground">· {counts[s]}</span>
-            </div>
+            </button>
           ))}
         </div>
-      </div>
+      </header>
 
       {tokenError ? (
         <div className="surface p-8 text-center">
@@ -252,18 +496,298 @@ function LiveMap() {
           <p className="mt-3 text-sm">Token do Mapbox não configurado.</p>
         </div>
       ) : (
-        <div className="surface relative overflow-hidden" style={{ height: "72vh" }}>
-          <div ref={containerRef} className="h-full w-full" />
-          {points.length === 0 && (
-            <div className="glass-bar pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full px-4 py-2 text-sm text-muted-foreground shadow-lg">
-              <MapPin className="h-4 w-4" /> Nenhuma viagem em andamento
+        <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+          {/* Map */}
+          <div className="surface relative overflow-hidden" style={{ height: "min(72vh,720px)" }}>
+            <div ref={containerRef} className="h-full w-full" />
+
+            {/* Empty overlay */}
+            {enriched.length === 0 && (
+              <div className="glass-bar pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full px-4 py-2 text-sm text-muted-foreground shadow-lg">
+                <MapPin className="h-4 w-4" /> Nenhum veículo em viagem
+              </div>
+            )}
+
+            {/* Style switcher */}
+            <div className="glass-bar absolute left-3 top-3 flex items-center gap-1 rounded-full p-1 text-xs">
+              {(Object.keys(MAP_STYLES) as (keyof typeof MAP_STYLES)[]).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setStyleKey(k)}
+                  className={cn(
+                    "rounded-full px-2.5 py-1 transition-colors",
+                    styleKey === k ? "bg-primary text-primary-foreground" : "text-foreground/70 hover:bg-accent",
+                  )}
+                >
+                  {MAP_STYLES[k].label}
+                </button>
+              ))}
             </div>
-          )}
-          <div className="glass-bar pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs text-foreground/70">
-            <Truck className="h-3 w-3" /> Atualização automática
+
+            {/* Selected vehicle floating card */}
+            {selectedPoint && (
+              <div className="absolute bottom-3 left-3 right-3 z-10 sm:right-auto sm:max-w-sm">
+                <SelectedCard
+                  point={selectedPoint}
+                  status={selectedPoint.status}
+                  now={now}
+                  autoFollow={autoFollow}
+                  onToggleFollow={() => setAutoFollow((v) => !v)}
+                  onClose={clearSelection}
+                  onDetails={() => navigate({ to: `/trips/${selectedPoint.trip_id}` })}
+                />
+              </div>
+            )}
+
+            {/* Sidebar toggle (lg-) */}
+            <button
+              onClick={() => setSidebarOpen((v) => !v)}
+              className="glass-bar absolute right-3 top-16 inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium lg:hidden"
+              aria-label="Alternar lista"
+            >
+              {sidebarOpen ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+              {sidebarOpen ? "Ocultar" : "Veículos"}
+            </button>
           </div>
+
+          {/* Sidebar */}
+          <aside className={cn(
+            "surface flex flex-col overflow-hidden p-0",
+            !sidebarOpen && "hidden lg:flex",
+          )} style={{ maxHeight: "min(72vh,720px)" }}>
+            <div className="border-b border-border p-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por placa, motorista…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-9 pl-9"
+                />
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as Status | "all")}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os status</SelectItem>
+                    {(Object.keys(STATUS_META) as Status[]).map((s) => (
+                      <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                  {filtered.length} / {enriched.length}
+                </span>
+              </div>
+            </div>
+
+            <div className="scrollbar-thin flex-1 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <div className="p-6 text-center text-sm text-muted-foreground">
+                  Nada encontrado.
+                </div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {filtered.map((p) => (
+                    <li key={p.trip_id}>
+                      <button
+                        onClick={() => focusVehicle(p.trip_id)}
+                        className={cn(
+                          "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent active:bg-accent",
+                          selectedTripId === p.trip_id && "bg-primary/5",
+                        )}
+                      >
+                        <div
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                          style={{ background: STATUS_META[p.status].color, boxShadow: `0 0 0 3px ${STATUS_META[p.status].ring}` }}
+                        >
+                          <Truck className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-semibold">{p.vehicle_plate ?? "—"}</span>
+                            {p.speed != null && (p.speed ?? 0) * 3.6 >= 1 && (
+                              <span className="shrink-0 text-[10px] font-medium text-muted-foreground tabular-nums">
+                                {Math.round((p.speed ?? 0) * 3.6)} km/h
+                              </span>
+                            )}
+                          </div>
+                          <p className="truncate text-[11px] text-muted-foreground">{p.driver_name ?? "—"}</p>
+                          <p className="truncate text-[10px] text-muted-foreground">{relativeTime(p.recorded_at, now)}</p>
+                        </div>
+                        {selectedTripId === p.trip_id && <Crosshair className="h-3.5 w-3.5 text-primary" />}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </aside>
         </div>
       )}
     </div>
   );
 }
+
+/* ============================================================
+ * Helpers
+ * ========================================================== */
+
+function renderPopupHtml(p: LivePoint, status: Status, now: number) {
+  const meta = STATUS_META[status];
+  const speed = p.speed != null ? Math.round((p.speed ?? 0) * 3.6) : null;
+  return `
+    <div style="font-family:Inter,sans-serif;min-width:200px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="display:inline-flex;height:8px;width:8px;border-radius:50%;background:${meta.color};box-shadow:0 0 0 3px ${meta.ring}"></span>
+        <strong style="font-size:14px">${p.vehicle_plate ?? "—"}</strong>
+        <span style="font-size:11px;color:#6b7280;margin-left:auto">${meta.label}</span>
+      </div>
+      <div style="font-size:12px;color:#374151;margin-bottom:6px">
+        ${p.driver_name ?? "—"}
+        ${p.driver_phone ? `<a href="tel:${p.driver_phone}" style="margin-left:6px;color:#16a34a;text-decoration:none;font-weight:600">📞 ${p.driver_phone}</a>` : ""}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px">
+        <div><span style="color:#6b7280">Velocidade</span><br/><b>${speed != null ? speed + " km/h" : "—"}</b></div>
+        <div><span style="color:#6b7280">Precisão</span><br/><b>${p.accuracy != null ? Math.round(Number(p.accuracy)) + " m" : "—"}</b></div>
+        <div><span style="color:#6b7280">Direção</span><br/><b>${p.heading != null ? Math.round(p.heading) + "°" : "—"}</b></div>
+        <div><span style="color:#6b7280">Última</span><br/><b>${relativeTime(p.recorded_at, now)}</b></div>
+      </div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:11px;color:#6b7280">
+        ${new Date(p.recorded_at).toLocaleTimeString("pt-BR")}
+      </div>
+      <button data-trip="${p.trip_id}" style="margin-top:8px;width:100%;padding:8px 10px;border-radius:6px;background:oklch(0.32 0.08 160);color:#fff;border:0;font-size:12px;cursor:pointer;font-weight:600">
+        Ver detalhes da viagem
+      </button>
+    </div>`;
+}
+
+/** Render or update the trail polyline for a single vehicle. */
+function updateTrail(map: mapboxgl.Map, entry: MarkerEntry) {
+  if (entry.trail.length < 2) return;
+  const data: GeoJSON.Feature<GeoJSON.LineString> = {
+    type: "Feature",
+    properties: {},
+    geometry: { type: "LineString", coordinates: entry.trail },
+  };
+  const src = map.getSource(entry.trailIds.source) as mapboxgl.GeoJSONSource | undefined;
+  if (src) {
+    src.setData(data);
+  } else {
+    map.addSource(entry.trailIds.source, { type: "geojson", data });
+    map.addLayer({
+      id: entry.trailIds.layer,
+      type: "line",
+      source: entry.trailIds.source,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#16a34a",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 16, 5],
+        "line-opacity": 0.55,
+        "line-blur": 0.2,
+      },
+    });
+  }
+}
+
+/** Load up to 60 recent gps points from the DB so the trail isn't empty on first paint. */
+async function seedTrail(tripId: string, entry: MarkerEntry, map: mapboxgl.Map) {
+  const { data } = await supabase
+    .from("gps_points")
+    .select("lat,lng,recorded_at")
+    .eq("trip_id", tripId)
+    .order("recorded_at", { ascending: false })
+    .limit(60);
+  if (!data?.length) return;
+  const points = data.reverse().map((p) => [p.lng, p.lat] as [number, number]);
+  entry.trail = points;
+  updateTrail(map, entry);
+}
+
+/* ============================================================
+ * Floating selected-vehicle card
+ * ========================================================== */
+
+function SelectedCard({
+  point, status, now, autoFollow, onToggleFollow, onClose, onDetails,
+}: {
+  point: LivePoint;
+  status: Status;
+  now: number;
+  autoFollow: boolean;
+  onToggleFollow: () => void;
+  onClose: () => void;
+  onDetails: () => void;
+}) {
+  const meta = STATUS_META[status];
+  const speed = point.speed != null ? Math.round((point.speed ?? 0) * 3.6) : null;
+  return (
+    <div className="surface relative overflow-hidden p-4 shadow-[var(--shadow-pop)]">
+      <button
+        onClick={onClose}
+        className="tap absolute right-2 top-2 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        aria-label="Fechar"
+      >
+        <X className="h-4 w-4" />
+      </button>
+      <div className="flex items-center gap-3">
+        <div
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white"
+          style={{ background: meta.color, boxShadow: `0 0 0 4px ${meta.ring}` }}
+        >
+          <Truck className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1 pr-6">
+          <div className="flex items-center gap-2">
+            <p className="truncate font-display text-xl leading-none">{point.vehicle_plate ?? "—"}</p>
+            <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: meta.ring, color: meta.color }}>
+              {meta.label}
+            </span>
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {point.driver_name ?? "—"}{point.vehicle_model ? ` · ${point.vehicle_model}` : ""}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border/60 pt-3 text-center text-[11px]">
+        <Stat icon={Gauge} label="Vel." value={speed != null ? `${speed} km/h` : "—"} />
+        <Stat icon={Signal} label="Precisão" value={point.accuracy != null ? `±${Math.round(point.accuracy)}m` : "—"} />
+        <Stat icon={Clock} label="Atualizado" value={relativeTime(point.recorded_at, now)} />
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={onToggleFollow}
+          className={cn(
+            "inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border text-xs font-medium",
+            autoFollow ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-accent",
+          )}
+        >
+          {autoFollow ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+          {autoFollow ? "Seguindo" : "Seguir veículo"}
+        </button>
+        <button
+          onClick={onDetails}
+          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-foreground text-xs font-medium text-background hover:opacity-90"
+        >
+          Detalhes <ArrowUpRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+  return (
+    <div>
+      <p className="flex items-center justify-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <Icon className="h-2.5 w-2.5" /> {label}
+      </p>
+      <p className="mt-0.5 text-xs font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+// silence unused
+void [Layers];
