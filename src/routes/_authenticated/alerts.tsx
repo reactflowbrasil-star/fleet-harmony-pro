@@ -110,15 +110,18 @@ function AlertsPage() {
 function AlertRow({ alert }: { alert: Alert }) {
   const Icon = kindIcon[alert.kind] ?? AlertTriangle;
   const content = (
-    <article className="surface group flex items-center gap-3 p-4 transition-colors hover:border-primary/30">
+    <article className="surface group flex items-start gap-3 p-3 transition-colors hover:border-primary/30 active:border-primary/30 sm:items-center sm:p-4">
       <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border", severityClasses[alert.severity])}>
         <Icon className="h-5 w-5" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold leading-tight">{alert.title}</p>
-        {alert.detail && <p className="truncate text-xs text-muted-foreground">{alert.detail}</p>}
+        <p className="font-semibold leading-tight sm:truncate">{alert.title}</p>
+        {alert.detail && <p className="mt-0.5 truncate text-xs text-muted-foreground">{alert.detail}</p>}
+        <p className="mt-1 text-[10px] text-muted-foreground sm:hidden">
+          {new Date(alert.occurredAt).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+        </p>
       </div>
-      <div className="shrink-0 text-right">
+      <div className="hidden shrink-0 text-right sm:block">
         <span className={cn(
           "inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold",
           severityClasses[alert.severity],
@@ -129,7 +132,7 @@ function AlertRow({ alert }: { alert: Alert }) {
           {new Date(alert.occurredAt).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
         </p>
       </div>
-      {alert.href && <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />}
+      {alert.href && <ArrowRight className="h-4 w-4 shrink-0 self-center text-muted-foreground transition-transform group-hover:translate-x-0.5" />}
     </article>
   );
   if (alert.href) return <li><Link to={alert.href}>{content}</Link></li>;

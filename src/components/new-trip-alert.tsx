@@ -41,8 +41,8 @@ export function NewTripAlert() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) dismiss(); }}>
-      <DialogContent className="max-w-md p-0">
-        <div className="relative overflow-hidden rounded-t-2xl p-5" style={{ background: "var(--gradient-emerald)" }}>
+      <DialogContent className="max-w-[calc(100vw-2rem)] gap-0 p-0 sm:max-w-md">
+        <div className="relative overflow-hidden rounded-t-2xl p-4 sm:p-5" style={{ background: "var(--gradient-emerald)" }}>
           <div className="flex items-center gap-3 text-primary-foreground">
             <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/20">
               <Bell className="h-5 w-5" />
@@ -59,9 +59,9 @@ export function NewTripAlert() {
           </div>
         </div>
 
-        <div className="space-y-3 p-5">
+        <div className="space-y-3 p-4 sm:p-5">
           {lastIncoming.message && (
-            <p className="font-display text-2xl leading-tight">{lastIncoming.message}</p>
+            <p className="font-display text-xl leading-tight sm:text-2xl">{lastIncoming.message}</p>
           )}
 
           <div className="space-y-1.5 text-sm">
@@ -94,12 +94,12 @@ export function NewTripAlert() {
             )}
           </div>
 
-          <div className="flex gap-2 pt-1">
-            <Button onClick={openTrip} className="flex-1">
-              <RouteIcon className="mr-2 h-4 w-4" />Ver detalhes
-            </Button>
-            <Button onClick={dismiss} variant="outline" className="flex-1">
+          <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row">
+            <Button onClick={dismiss} variant="outline" className="h-11 sm:flex-1">
               Agora não
+            </Button>
+            <Button onClick={openTrip} className="h-11 sm:flex-1">
+              <RouteIcon className="mr-2 h-4 w-4" />Ver detalhes
             </Button>
           </div>
         </div>

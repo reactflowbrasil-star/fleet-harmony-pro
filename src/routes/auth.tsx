@@ -125,7 +125,7 @@ function AuthPage() {
         <div className="text-primary-foreground">
           {isCompany ? (
             <>
-              <h2 className="font-display text-5xl italic leading-[1.05]">"Controle total<br />da operação."</h2>
+              <h2 className="font-display text-3xl italic leading-snug sm:text-4xl xl:text-5xl xl:leading-[1.05]">"Controle total<br />da operação."</h2>
               <p className="mt-5 max-w-md text-primary-foreground/85">
                 Painel completo com rastreio GPS em tempo real, dashboards executivos, geofencing,
                 gestão de motoristas, abastecimentos, multas e manutenções.
@@ -138,7 +138,7 @@ function AuthPage() {
             </>
           ) : (
             <>
-              <h2 className="font-display text-5xl italic leading-[1.05]">"Do volante<br />à gestão."</h2>
+              <h2 className="font-display text-3xl italic leading-snug sm:text-4xl xl:text-5xl xl:leading-[1.05]">"Do volante<br />à gestão."</h2>
               <p className="mt-5 max-w-md text-primary-foreground/85">
                 Toques grandes, fluxo curto, funciona offline. Inicie a viagem, registre abastecimento
                 e ocorrências — a gestão recebe tudo em tempo real.

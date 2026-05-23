@@ -382,12 +382,12 @@ function GeofenceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? "Editar geocerca" : "Nova geocerca"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-3">
+          <div className="order-2 space-y-3 md:order-1">
             <div>
               <Label>Nome *</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required className="h-10" placeholder="Ex.: Centro de distribuição" />
@@ -425,7 +425,7 @@ function GeofenceDialog({
               {saving ? "Salvando…" : editing ? "Salvar alterações" : "Criar geocerca"}
             </Button>
           </div>
-          <div className="relative h-[320px] overflow-hidden rounded-lg border border-border md:h-full md:min-h-[360px]">
+          <div className="relative order-1 h-[240px] overflow-hidden rounded-lg border border-border sm:h-[280px] md:order-2 md:h-full md:min-h-[360px]">
             {tokenError ? (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 <AlertCircle className="mr-2 h-4 w-4" />Mapa indisponível

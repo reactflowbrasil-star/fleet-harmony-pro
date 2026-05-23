@@ -425,11 +425,11 @@ function NewTripPage() {
         </Link>
       </div>
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="page-title">Nova viagem</h1>
           <p className="mt-1 text-sm text-muted-foreground">Defina rota, motorista e horário. A viagem aparece no app do motorista.</p>
         </div>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="h-10">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="h-11 w-full shrink-0 sm:h-10 sm:w-auto">
           {save.isPending ? "Salvando…" : "Salvar e atribuir"}
         </Button>
       </div>
@@ -437,10 +437,10 @@ function NewTripPage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
         {/* LEFT: form */}
         <div className="space-y-4">
-          <section className="surface space-y-3 p-4">
+          <section className="surface space-y-3 p-4 sm:p-5">
             <h2 className="font-display text-lg">Detalhes da viagem</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
                 <Label>Título *</Label>
                 <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Ex.: Entrega Cliente Centro" />
               </div>
@@ -490,11 +490,11 @@ function NewTripPage() {
                 <Label>Ordem de serviço</Label>
                 <Input value={form.service_order} onChange={(e) => setForm({ ...form, service_order: e.target.value })} />
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <Label>Instruções ao motorista</Label>
                 <Textarea rows={2} value={form.driver_instructions} onChange={(e) => setForm({ ...form, driver_instructions: e.target.value })} />
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <Label>Observações internas</Label>
                 <Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
               </div>
@@ -519,25 +519,25 @@ function NewTripPage() {
               <Button variant="outline" onClick={runSearch} disabled={searching}>{searching ? "Buscando…" : "Buscar"}</Button>
             </div>
             {results.length > 0 && (
-              <ul className="space-y-1 text-sm">
+              <ul className="space-y-1.5 text-sm">
                 {results.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 hover:bg-accent">
+                  <li key={r.id} className="rounded-md border border-border px-3 py-2.5 hover:bg-accent">
                     <div className="min-w-0">
                       <div className="truncate font-medium">{r.name}</div>
                       <div className="truncate text-xs text-muted-foreground">{r.address}</div>
                     </div>
-                    <div className="flex gap-1">
+                    <div className="mt-2 flex gap-1.5">
                       <button
                         onClick={() => { addOrReplacePoint({ type: "origin" }, { lat: r.lat, lng: r.lng, name: r.name, address: r.address }); }}
-                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-card"
+                        className="h-9 flex-1 rounded-md border border-border px-3 text-xs font-medium hover:bg-card"
                       >Origem</button>
                       <button
                         onClick={() => { addOrReplacePoint({ type: "stop" }, { lat: r.lat, lng: r.lng, name: r.name, address: r.address }); }}
-                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-card"
+                        className="h-9 flex-1 rounded-md border border-border px-3 text-xs font-medium hover:bg-card"
                       >Parada</button>
                       <button
                         onClick={() => { addOrReplacePoint({ type: "destination" }, { lat: r.lat, lng: r.lng, name: r.name, address: r.address }); }}
-                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-card"
+                        className="h-9 flex-1 rounded-md border border-border px-3 text-xs font-medium hover:bg-card"
                       >Destino</button>
                     </div>
                   </li>
@@ -546,7 +546,7 @@ function NewTripPage() {
             )}
           </section>
 
-          <section className="surface space-y-3 p-4">
+          <section className="surface space-y-3 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-display text-lg">Pontos da rota</h2>
               <div className="flex flex-wrap gap-1.5 text-xs">
@@ -554,9 +554,9 @@ function NewTripPage() {
                   <button
                     key={t}
                     onClick={() => setPickMode({ type: t })}
-                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 transition-colors ${pickMode?.type === t && pickMode.index == null ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-accent"}`}
+                    className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-3 transition-colors ${pickMode?.type === t && pickMode.index == null ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-accent"}`}
                   >
-                    <Target className="h-3 w-3" />Definir {pointTypeLabel[t]}
+                    <Target className="h-3.5 w-3.5" />Definir {pointTypeLabel[t]}
                   </button>
                 ))}
               </div>
@@ -597,9 +597,9 @@ function NewTripPage() {
                           <option key={t} value={t}>{pointTypeLabel[t]}</option>
                         ))}
                       </select>
-                      <button onClick={() => movePoint(i, -1)} className="rounded p-1 text-muted-foreground hover:text-foreground" title="Subir"><ArrowUp className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => movePoint(i, 1)} className="rounded p-1 text-muted-foreground hover:text-foreground" title="Descer"><ArrowDown className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => removePoint(i)} className="rounded p-1 text-muted-foreground hover:text-destructive" title="Remover"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => movePoint(i, -1)} className="tap rounded text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Subir"><ArrowUp className="h-4 w-4" /></button>
+                      <button onClick={() => movePoint(i, 1)} className="tap rounded text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Descer"><ArrowDown className="h-4 w-4" /></button>
+                      <button onClick={() => removePoint(i)} className="tap rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Remover"><Trash2 className="h-4 w-4" /></button>
                     </div>
                   </li>
                 ))}
@@ -607,7 +607,7 @@ function NewTripPage() {
             )}
             <button
               onClick={() => setPickMode({ type: "stop" })}
-              className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border py-2 text-sm text-muted-foreground hover:bg-accent"
+              className="flex h-11 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border text-sm text-muted-foreground hover:bg-accent"
             >
               <Plus className="h-4 w-4" />Adicionar parada (clicar no mapa)
             </button>
@@ -616,7 +616,7 @@ function NewTripPage() {
 
         {/* RIGHT: map */}
         <div className="space-y-3">
-          <div className="surface relative overflow-hidden" style={{ height: "70vh" }}>
+          <div className="surface relative overflow-hidden h-[50vh] sm:h-[60vh] lg:h-[70vh]">
             <div ref={containerRef} className="h-full w-full" />
             {pickMode && (
               <div className="glass-bar pointer-events-none absolute left-3 top-3 rounded-full px-3 py-1.5 text-xs text-foreground/80">

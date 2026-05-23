@@ -288,7 +288,7 @@ function TopBar({ onMenu }: { onMenu: () => void }) {
               )}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80">
+          <DropdownMenuContent align="end" sideOffset={8} className="w-[calc(100vw-1rem)] max-w-sm sm:w-80">
             <div className="flex items-center justify-between px-2 py-1.5">
               <span className="text-sm font-semibold">Notificações</span>
               <button onClick={() => navigate({ to: "/notifications" })} className="text-xs text-primary hover:underline">

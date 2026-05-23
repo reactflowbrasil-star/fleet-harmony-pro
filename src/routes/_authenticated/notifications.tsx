@@ -130,7 +130,7 @@ function NotificationsPage() {
       )}
 
       {notifications.length === 0 ? (
-        <div className="surface border-dashed p-12 text-center">
+        <div className="surface border-dashed p-8 text-center sm:p-12">
           <Bell className="mx-auto h-10 w-10 text-muted-foreground" />
           <p className="mt-3 text-sm text-muted-foreground">Nenhuma notificação ainda.</p>
         </div>
@@ -206,8 +206,8 @@ function NotificationItem({
       {unread && (
         <button
           onClick={() => void onMarkRead(n.id)}
-          className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-          title="Marcar como lida"
+          className="tap shrink-0 self-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          aria-label="Marcar como lida"
         >
           <Check className="h-4 w-4" />
         </button>

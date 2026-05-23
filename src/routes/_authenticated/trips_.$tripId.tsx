@@ -6,10 +6,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { getMapboxToken } from "@/lib/mapbox.functions";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  AlertCircle, ArrowLeft, Clock, Gauge, MapPin, Route as RouteIcon,
+  AlertCircle, ArrowLeft, Clock, Gauge, MapPin, Pencil, Route as RouteIcon,
   Timer, Truck, User as UserIcon,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/trips_/$tripId")({
   component: TripDetailPage,
@@ -291,13 +292,16 @@ function TripDetailPage() {
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="page-title">{trip.title || `${trip.origin || "—"} → ${trip.destination || "—"}`}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Viagem #{String(trip.id).slice(0, 8)}
             {trip.scheduled_start_at && ` · prevista para ${new Date(trip.scheduled_start_at).toLocaleString("pt-BR")}`}
           </p>
         </div>
+        <Button asChild className="h-10 shrink-0">
+          <Link to={`/trips/${trip.id}/edit`}><Pencil className="mr-2 h-4 w-4" />Editar</Link>
+        </Button>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
