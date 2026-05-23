@@ -107,25 +107,61 @@ function DriversPage() {
     if (!companyId) return;
     const fd = new FormData(e.currentTarget);
     const vehicleId = String(fd.get("vehicle_id") || "");
+    const email = String(fd.get("email") || "").trim() || null;
+    const password = String(fd.get("password") || "").trim();
     const payload = {
       full_name: String(fd.get("full_name") || "").trim(),
       cpf: String(fd.get("cpf") || "").trim() || null,
       phone: String(fd.get("phone") || "").trim() || null,
-      email: String(fd.get("email") || "").trim() || null,
+      email,
       cnh: String(fd.get("cnh") || "").trim() || null,
       cnh_category: String(fd.get("cnh_category") || "").trim() || null,
       cnh_expiry: (fd.get("cnh_expiry") as string) || null,
       vehicle_id: vehicleId || null,
       status: (String(fd.get("status") || "active") as DriverStatus),
     };
-    let error: any;
+    let driverId: string | undefined = editing?.id;
     if (editing) {
-      ({ error } = await supabase.from("drivers").update(payload).eq("id", editing.id));
+      const { error } = await supabase.from("drivers").update(payload).eq("id", editing.id);
+      if (error) return toast.error(error.message);
     } else {
-      ({ error } = await supabase.from("drivers").insert({ company_id: companyId, ...payload }));
+      const { data, error } = await supabase
+        .from("drivers")
+        .insert({ company_id: companyId, ...payload })
+        .select("id")
+        .single();
+      if (error) return toast.error(error.message);
+      driverId = data?.id;
     }
-    if (error) return toast.error(error.message);
-    toast.success(editing ? "Motorista atualizado" : "Motorista cadastrado");
+
+    // Create / update auth account for driver if email + password provided
+    let accessMsg = "";
+    if (driverId && email && password) {
+      if (password.length < 6) {
+        toast.warning("Cadastro salvo, mas senha precisa ter no mínimo 6 caracteres — acesso não foi criado.");
+      } else {
+        try {
+          const { data: fnData, error: fnErr } = await supabase.functions.invoke("create-driver-user", {
+            body: { driver_id: driverId, email, password },
+          });
+          if (fnErr) throw fnErr;
+          if ((fnData as any)?.ok) accessMsg = " · acesso criado/atualizado";
+          else if ((fnData as any)?.error) throw new Error((fnData as any).error);
+        } catch (err: any) {
+          const msg = err?.message || "Falha ao criar acesso";
+          if (/not found|404|404 page not found|FunctionsHttpError/i.test(msg)) {
+            toast.warning(
+              "Motorista salvo, mas a Edge Function 'create-driver-user' ainda não foi deployada no Supabase. Veja docs/setup-driver-auth.md.",
+              { duration: 9000 },
+            );
+          } else {
+            toast.warning(`Motorista salvo, mas acesso de login falhou: ${msg}`, { duration: 8000 });
+          }
+        }
+      }
+    }
+
+    toast.success((editing ? "Motorista atualizado" : "Motorista cadastrado") + accessMsg);
     setOpen(false);
     setEditing(null);
     qc.invalidateQueries({ queryKey: ["drivers"] });
@@ -159,7 +195,23 @@ function DriversPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>CPF</Label><Input name="cpf" maxLength={20} defaultValue={editing?.cpf ?? ""} /></div>
                 <div><Label>Telefone</Label><Input name="phone" maxLength={20} defaultValue={editing?.phone ?? ""} /></div>
-                <div className="col-span-2"><Label>E-mail</Label><Input name="email" type="email" maxLength={255} defaultValue={editing?.email ?? ""} /></div>
+                <div className="col-span-2"><Label>E-mail (login)</Label><Input name="email" type="email" maxLength={255} defaultValue={editing?.email ?? ""} autoComplete="off" /></div>
+                <div className="col-span-2">
+                  <Label>{editing ? "Nova senha (opcional)" : "Senha de acesso"}</Label>
+                  <Input
+                    name="password"
+                    type="password"
+                    minLength={6}
+                    maxLength={72}
+                    autoComplete="new-password"
+                    placeholder={editing ? "Deixe em branco para manter" : "Mínimo 6 caracteres"}
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {editing
+                      ? "Preencha apenas se quiser definir/redefinir a senha do motorista."
+                      : "Preencha para criar imediatamente o acesso do motorista ao app. Pode ser feito depois."}
+                  </p>
+                </div>
                 <div><Label>CNH</Label><Input name="cnh" maxLength={20} defaultValue={editing?.cnh ?? ""} /></div>
                 <div><Label>Categoria</Label><Input name="cnh_category" maxLength={5} placeholder="B, C, D, E" defaultValue={editing?.cnh_category ?? ""} /></div>
                 <div className="col-span-2"><Label>Validade CNH</Label><Input name="cnh_expiry" type="date" defaultValue={editing?.cnh_expiry ?? ""} /></div>

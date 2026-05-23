@@ -300,7 +300,7 @@ function TripDetailPage() {
           </p>
         </div>
         <Button asChild className="h-10 shrink-0">
-          <Link to={`/trips/${trip.id}/edit`}><Pencil className="mr-2 h-4 w-4" />Editar</Link>
+          <Link to={`/trips/${trip.id}/edit` as any}><Pencil className="mr-2 h-4 w-4" />Editar</Link>
         </Button>
       </div>
 

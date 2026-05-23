@@ -411,10 +411,10 @@ function EditTripPage() {
 
       // Try extended first
       let degraded = false;
-      const { error: extErr } = await supabase.from("trips").update(extendedPayload).eq("id", tripId);
+      const { error: extErr } = await (supabase.from("trips") as any).update(extendedPayload).eq("id", tripId);
       if (extErr) {
         if (isMissingColumnError(extErr)) {
-          const { error: baseErr } = await supabase.from("trips").update(basePayload).eq("id", tripId);
+          const { error: baseErr } = await (supabase.from("trips") as any).update(basePayload).eq("id", tripId);
           if (baseErr) throw baseErr;
           degraded = true;
         } else {
@@ -528,7 +528,7 @@ function EditTripPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <Link to={`/trips/${tripId}`} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <Link to={`/trips/${tripId}` as any} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />Cancelar edição
         </Link>
       </div>
