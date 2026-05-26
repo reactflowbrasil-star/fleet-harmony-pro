@@ -62,13 +62,16 @@ async function routeAfterLogin(userId: string, chosenKind: AccountKind, navigate
 function AuthPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [kind, setKind] = useState<AccountKind>(() => {
-    if (typeof window === "undefined") return "company";
-    return (localStorage.getItem(ROLE_KEY) as AccountKind) || "company";
-  });
+  const [kind, setKind] = useState<AccountKind>("company");
+
+  // Read persisted choice only after hydration to avoid SSR/CSR mismatch (React #418).
+  useEffect(() => {
+    const stored = localStorage.getItem(ROLE_KEY) as AccountKind | null;
+    if (stored === "driver" || stored === "company") setKind(stored);
+  }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined") localStorage.setItem(ROLE_KEY, kind);
+    localStorage.setItem(ROLE_KEY, kind);
   }, [kind]);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
