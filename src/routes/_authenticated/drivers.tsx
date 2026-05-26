@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Pencil, Plus, Search, Trash2, User as UserIcon, KeyRound, ShieldCheck, ShieldOff, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { createOrUpdateDriverAuth } from "@/lib/driver-auth.functions";
 
 export const Route = createFileRoute("/_authenticated/drivers")({
   component: DriversPage,
@@ -146,65 +147,12 @@ function DriversPage() {
       if (password.length < 6) {
         toast.warning("Cadastro salvo, mas senha precisa ter no mínimo 6 caracteres — acesso não foi criado.");
       } else {
-        // 1) Try Edge Function
-        let edgeOk = false;
-        let edgeErrMsg: string | null = null;
         try {
-          const { data: fnData, error: fnErr } = await supabase.functions.invoke("create-driver-user", {
-            body: { driver_id: driverId, email, password },
-          });
-          if (fnErr) throw fnErr;
-          if ((fnData as any)?.ok) {
-            edgeOk = true;
-            accessMsg = " · acesso criado/atualizado";
-          } else if ((fnData as any)?.error) {
-            throw new Error((fnData as any).error);
-          }
+          await createOrUpdateDriverAuth({ data: { driver_id: driverId, email, password } });
+          accessMsg = " · acesso criado/atualizado";
         } catch (err: any) {
-          edgeErrMsg = err?.message || "Falha ao criar acesso";
-        }
-
-        // 2) Fallback: client-side signUp via isolated client
-        if (!edgeOk) {
-          const looksMissing = !!edgeErrMsg && /not found|404|404 page not found|FunctionsHttpError|Failed to send/i.test(edgeErrMsg);
-          try {
-            const { clientSideCreateDriverAuth } = await import("@/lib/driver-signup");
-            const { needsEmailConfirmation, linkedUserId } = await clientSideCreateDriverAuth({
-              driverId,
-              email,
-              password,
-              fullName: payload.full_name,
-            });
-            if (!linkedUserId) {
-              toast.warning(
-                "Conta criada no Supabase, mas o user_id não pôde ser linkado automaticamente (confirme o email no Supabase ou deploy a Edge Function 'create-driver-user' para linkar).",
-                { duration: 12000 },
-              );
-            } else if (needsEmailConfirmation) {
-              toast.warning(
-                "Motorista salvo e conta criada. ⚠️ É necessário confirmar o e-mail antes de logar. Desative 'Confirm email' em Supabase → Authentication → Providers → Email para liberar imediatamente.",
-                { duration: 12000 },
-              );
-            } else {
-              toast.success("Motorista salvo · acesso criado");
-              accessMsg = ""; // already toasted
-            }
-          } catch (signupErr: any) {
-            const sMsg = signupErr?.message || "Falha no signup";
-            if (/already registered|already exists|duplicate/i.test(sMsg)) {
-              toast.warning(
-                "Esse e-mail já tem conta. Use 'Definir nova senha' (edite o motorista) — mas isso só funciona com a Edge Function deployada.",
-                { duration: 10000 },
-              );
-            } else if (looksMissing) {
-              toast.error(
-                `Não foi possível criar acesso. Deploy a Edge Function 'create-driver-user' (veja docs/setup-driver-auth.md). Erro: ${sMsg}`,
-                { duration: 10000 },
-              );
-            } else {
-              toast.error(`Falha ao criar acesso: ${sMsg}`, { duration: 8000 });
-            }
-          }
+          const msg = err?.message || "Falha ao criar acesso";
+          toast.error(`Falha ao criar acesso: ${msg}`, { duration: 8000 });
         }
       }
     }
@@ -436,68 +384,13 @@ function PasswordDialog({
 
     setSaving(true);
     try {
-      // Try Edge Function first
-      let edgeOk = false;
-      let edgeErrMsg: string | null = null;
-      try {
-        const { data: fnData, error: fnErr } = await supabase.functions.invoke("create-driver-user", {
-          body: { driver_id: driver.id, email: em, password },
-        });
-        if (fnErr) throw fnErr;
-        if ((fnData as any)?.ok) edgeOk = true;
-        else if ((fnData as any)?.error) throw new Error((fnData as any).error);
-      } catch (err: any) {
-        edgeErrMsg = err?.message || "Falha ao criar acesso";
-      }
-
-      if (edgeOk) {
-        toast.success(hasAccess ? "Senha redefinida" : "Acesso criado");
-        onSaved();
-        onOpenChange(false);
-        return;
-      }
-
-      // Fallback: client-side signUp
-      const looksMissing = !!edgeErrMsg && /not found|404|FunctionsHttpError|Failed to send/i.test(edgeErrMsg);
-      try {
-        const { clientSideCreateDriverAuth } = await import("@/lib/driver-signup");
-        const { needsEmailConfirmation, linkedUserId } = await clientSideCreateDriverAuth({
-          driverId: driver.id,
-          email: em,
-          password,
-          fullName: driver.full_name,
-        });
-        if (!linkedUserId) {
-          toast.warning(
-            "Conta criada no Supabase, mas o user_id não pôde ser linkado automaticamente. Confirme o email no Supabase ou deploy a Edge Function 'create-driver-user'.",
-            { duration: 12000 },
-          );
-        } else if (needsEmailConfirmation) {
-          toast.warning(
-            "Acesso criado. ⚠️ É necessário confirmar o e-mail antes de logar. Desative 'Confirm email' em Supabase → Authentication → Providers → Email.",
-            { duration: 12000 },
-          );
-        } else {
-          toast.success("Acesso criado e pronto para login");
-        }
-        onSaved();
-        onOpenChange(false);
-      } catch (signupErr: any) {
-        const sMsg = signupErr?.message || "Falha no cadastro";
-        if (/already registered|already exists|duplicate/i.test(sMsg)) {
-          toast.error(
-            "Esse e-mail já tem conta no Supabase Auth. Para redefinir a senha de uma conta existente é necessário deployar a Edge Function 'create-driver-user'.",
-            { duration: 12000 },
-          );
-        } else if (looksMissing) {
-          toast.error(
-            `Não foi possível criar acesso. Deploy a Edge Function (docs/setup-driver-auth.md). Erro: ${sMsg}`,
-            { duration: 10000 },
-          );
-        } else {
-          toast.error(`Falha: ${sMsg}`, { duration: 8000 });
-        }
-      }
+      await createOrUpdateDriverAuth({ data: { driver_id: driver.id, email: em, password } });
+      toast.success(hasAccess ? "Senha redefinida" : "Acesso criado");
+      onSaved();
+      onOpenChange(false);
+    } catch (err: any) {
+      const msg = err?.message || "Falha ao criar acesso";
+      toast.error(`Falha: ${msg}`, { duration: 8000 });
     } finally {
       setSaving(false);
     }
