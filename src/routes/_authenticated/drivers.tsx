@@ -147,67 +147,15 @@ function DriversPage() {
       if (password.length < 6) {
         toast.warning("Cadastro salvo, mas senha precisa ter no mínimo 6 caracteres — acesso não foi criado.");
       } else {
-        // 1) Try Edge Function
-        let edgeOk = false;
-        let edgeErrMsg: string | null = null;
         try {
-          const { data: fnData, error: fnErr } = await supabase.functions.invoke("create-driver-user", {
-            body: { driver_id: driverId, email, password },
-          });
-          if (fnErr) throw fnErr;
-          if ((fnData as any)?.ok) {
-            edgeOk = true;
-            accessMsg = " · acesso criado/atualizado";
-          } else if ((fnData as any)?.error) {
-            throw new Error((fnData as any).error);
-          }
+          await createOrUpdateDriverAuth({ data: { driver_id: driverId, email, password } });
+          accessMsg = " · acesso criado/atualizado";
         } catch (err: any) {
-          edgeErrMsg = err?.message || "Falha ao criar acesso";
-        }
-
-        // 2) Fallback: client-side signUp via isolated client
-        if (!edgeOk) {
-          const looksMissing = !!edgeErrMsg && /not found|404|404 page not found|FunctionsHttpError|Failed to send/i.test(edgeErrMsg);
-          try {
-            const { clientSideCreateDriverAuth } = await import("@/lib/driver-signup");
-            const { needsEmailConfirmation, linkedUserId } = await clientSideCreateDriverAuth({
-              driverId,
-              email,
-              password,
-              fullName: payload.full_name,
-            });
-            if (!linkedUserId) {
-              toast.warning(
-                "Conta criada no Supabase, mas o user_id não pôde ser linkado automaticamente (confirme o email no Supabase ou deploy a Edge Function 'create-driver-user' para linkar).",
-                { duration: 12000 },
-              );
-            } else if (needsEmailConfirmation) {
-              toast.warning(
-                "Motorista salvo e conta criada. ⚠️ É necessário confirmar o e-mail antes de logar. Desative 'Confirm email' em Supabase → Authentication → Providers → Email para liberar imediatamente.",
-                { duration: 12000 },
-              );
-            } else {
-              toast.success("Motorista salvo · acesso criado");
-              accessMsg = ""; // already toasted
-            }
-          } catch (signupErr: any) {
-            const sMsg = signupErr?.message || "Falha no signup";
-            if (/already registered|already exists|duplicate/i.test(sMsg)) {
-              toast.warning(
-                "Esse e-mail já tem conta. Use 'Definir nova senha' (edite o motorista) — mas isso só funciona com a Edge Function deployada.",
-                { duration: 10000 },
-              );
-            } else if (looksMissing) {
-              toast.error(
-                `Não foi possível criar acesso. Deploy a Edge Function 'create-driver-user' (veja docs/setup-driver-auth.md). Erro: ${sMsg}`,
-                { duration: 10000 },
-              );
-            } else {
-              toast.error(`Falha ao criar acesso: ${sMsg}`, { duration: 8000 });
-            }
-          }
+          const msg = err?.message || "Falha ao criar acesso";
+          toast.error(`Falha ao criar acesso: ${msg}`, { duration: 8000 });
         }
       }
+    }
     }
 
     toast.success((editing ? "Motorista atualizado" : "Motorista cadastrado") + accessMsg);
