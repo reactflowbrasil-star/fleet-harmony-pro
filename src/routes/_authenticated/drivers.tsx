@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Pencil, Plus, Search, Trash2, User as UserIcon, KeyRound, ShieldCheck, ShieldOff, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { createOrUpdateDriverAuth } from "@/lib/driver-auth.functions";
 
 export const Route = createFileRoute("/_authenticated/drivers")({
   component: DriversPage,
