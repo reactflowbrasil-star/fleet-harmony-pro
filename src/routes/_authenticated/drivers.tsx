@@ -156,7 +156,6 @@ function DriversPage() {
         }
       }
     }
-    }
 
     toast.success((editing ? "Motorista atualizado" : "Motorista cadastrado") + accessMsg);
     setOpen(false);
